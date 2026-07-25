@@ -342,3 +342,68 @@ class SupabaseService:
             return True
         except Exception:
             return False
+
+    # ============================================
+    # GESTIÓN DE ADMINS
+    # ============================================
+
+    def crear_admin(self, email: str, password: str, nombre: str) -> dict:
+        """Crear un nuevo usuario admin (auth + tabla admins)"""
+        if not self._check_client():
+            return {"error": "BD no disponible"}
+
+        try:
+            # Crear usuario en Supabase Auth
+            auth_response = self.client.auth.admin.create_user({
+                "email": email,
+                "password": password,
+                "email_confirm": True,
+            })
+
+            user_id = auth_response.user.id
+
+            # Registrar en tabla admins
+            self.client.table("admins").insert({
+                "user_id": user_id,
+                "email": email,
+                "nombre_admin": nombre,
+                "activo": True,
+            }).execute()
+
+            return {"data": {"email": email, "nombre": nombre}}
+        except Exception as e:
+            logger.error(f"Error creando admin: {e}")
+            return {"error": str(e)}
+
+    def get_admins(self) -> list:
+        """Obtener lista de admins"""
+        if not self._check_client():
+            return []
+
+        try:
+            response = self.client.table("admins").select("*").execute()
+            return response.data
+        except Exception as e:
+            logger.error(f"Error obteniendo admins: {e}")
+            return []
+
+    def desactivar_admin(self, email: str) -> dict:
+        """Desactivar un admin por email"""
+        if not self._check_client():
+            return {"error": "BD no disponible"}
+
+        try:
+            response = (
+                self.client.table("admins")
+                .update({"activo": False})
+                .eq("email", email)
+                .execute()
+            )
+
+            if not response.data:
+                return {"error": "Admin no encontrado"}
+
+            return {"data": response.data[0]}
+        except Exception as e:
+            logger.error(f"Error desactivando admin: {e}")
+            return {"error": str(e)}

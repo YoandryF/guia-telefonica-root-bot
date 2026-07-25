@@ -432,6 +432,88 @@ async def estadisticas(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ============================================
+# COMANDOS DE OWNER (solo ADMIN_CHAT_ID)
+# ============================================
+
+async def registrar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Registrar un nuevo admin (solo owner)
+    Uso: /registrar_admin email password nombre
+    """
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo el owner puede usar este comando.")
+        return
+
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            "📋 *Registrar nuevo admin*\n\n"
+            "Uso: `/registrar_admin email password nombre`\n\n"
+            "Ejemplo:\n"
+            "`/registrar_admin juan@email.com MiPass123 Juan Pérez`",
+            parse_mode="Markdown",
+        )
+        return
+
+    email = context.args[0]
+    password = context.args[1]
+    nombre = " ".join(context.args[2:])
+
+    resultado = db.crear_admin(email=email, password=password, nombre=nombre)
+
+    if resultado.get("error"):
+        await update.message.reply_text(f"❌ Error: {resultado['error']}")
+    else:
+        await update.message.reply_text(
+            f"✅ *Admin registrado exitosamente*\n\n"
+            f"👤 {nombre}\n"
+            f"📧 {email}\n"
+            f"🔑 Password: `{password}`\n\n"
+            f"Ya puede iniciar sesión en la app.",
+            parse_mode="Markdown",
+        )
+
+
+async def listar_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Listar admins registrados (solo owner)"""
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo el owner puede usar este comando.")
+        return
+
+    admins = db.get_admins()
+
+    if not admins:
+        await update.message.reply_text("📭 No hay admins registrados.")
+        return
+
+    texto = "🔐 *Admins registrados:*\n\n"
+    for a in admins:
+        estado = "✅" if a.get("activo") else "❌"
+        texto += f"{estado} {a.get('nombre_admin', 'Sin nombre')} — {a['email']}\n"
+
+    await update.message.reply_text(texto, parse_mode="Markdown")
+
+
+async def eliminar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Desactivar un admin (solo owner)
+    Uso: /eliminar_admin email
+    """
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo el owner puede usar este comando.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usa: `/eliminar_admin email`", parse_mode="Markdown")
+        return
+
+    email = context.args[0]
+    resultado = db.desactivar_admin(email)
+
+    if resultado.get("error"):
+        await update.message.reply_text(f"❌ Error: {resultado['error']}")
+    else:
+        await update.message.reply_text(f"✅ Admin `{email}` desactivado.", parse_mode="Markdown")
+
+
+# ============================================
 # MAIN
 # ============================================
 
@@ -458,6 +540,11 @@ def main():
     app.add_handler(CommandHandler("aprobar", aprobar))
     app.add_handler(CommandHandler("rechazar", rechazar))
     app.add_handler(CommandHandler("estadisticas", estadisticas))
+
+    # Comandos owner (gestión de admins)
+    app.add_handler(CommandHandler("registrar_admin", registrar_admin))
+    app.add_handler(CommandHandler("listar_admins", listar_admins))
+    app.add_handler(CommandHandler("eliminar_admin", eliminar_admin))
 
     # Iniciar según entorno
     if WEBHOOK_URL:
