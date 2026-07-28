@@ -517,11 +517,11 @@ async def eliminar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # MAIN
 # ============================================
 
-def main():
-    """Iniciar el bot"""
+def create_app():
+    """Crear y configurar la aplicación del bot (sin iniciarla)"""
     if not TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN no configurado")
-        return
+        return None
 
     app = Application.builder().token(TOKEN).build()
 
@@ -546,20 +546,17 @@ def main():
     app.add_handler(CommandHandler("listar_admins", listar_admins))
     app.add_handler(CommandHandler("eliminar_admin", eliminar_admin))
 
-    # Iniciar según entorno
-    if WEBHOOK_URL:
-        # Producción (Render) - Webhook
-        logger.info(f"Iniciando bot con webhook: {WEBHOOK_URL}")
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path=TOKEN,
-            webhook_url=f"{WEBHOOK_URL}/{TOKEN}",
-        )
-    else:
-        # Local - Polling
-        logger.info("Iniciando bot en modo polling (local)")
-        app.run_polling(allowed_updates=Update.ALL_TYPES)
+    return app
+
+
+def main():
+    """Iniciar el bot (para uso local)"""
+    app = create_app()
+    if not app:
+        return
+
+    logger.info("Iniciando bot en modo polling (local)")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
