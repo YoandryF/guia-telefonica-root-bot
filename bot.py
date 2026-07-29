@@ -5,6 +5,7 @@ Bot de Telegram - Guía Telefónica Colaborativa
 
 import os
 import logging
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -514,6 +515,118 @@ async def eliminar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ============================================
+# COMANDOS DE EXPORTACIÓN/IMPORTACIÓN
+# ============================================
+
+async def exportar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exportar contactos (solo admin). Uso: /exportar csv|json"""
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo el administrador puede usar este comando.")
+        return
+
+    formato = context.args[0].lower() if context.args else "csv"
+    if formato not in ("csv", "json"):
+        await update.message.reply_text("Usa: `/exportar csv` o `/exportar json`", parse_mode="Markdown")
+        return
+
+    await update.message.reply_text("⏳ Generando archivo...")
+
+    contactos = db.get_contactos_aprobados()
+    if not contactos:
+        await update.message.reply_text("📭 No hay contactos para exportar.")
+        return
+
+    import io
+    import csv as csv_module
+    import json
+
+    if formato == "csv":
+        output = io.StringIO()
+        writer = csv_module.writer(output)
+        writer.writerow(["nombre", "apellido", "telefono", "direccion", "ci"])
+        for c in contactos:
+            writer.writerow([c["nombre"], c["apellido"], c["telefono"], c.get("direccion", ""), c.get("ci", "")])
+        content = output.getvalue().encode("utf-8")
+        filename = "guia_telefonica.csv"
+    else:
+        data = {
+            "metadatos": {"total": len(contactos), "fecha": str(datetime.utcnow())},
+            "contactos": [{"nombre": c["nombre"], "apellido": c["apellido"], "telefono": c["telefono"], "direccion": c.get("direccion"), "ci": c.get("ci")} for c in contactos],
+        }
+        content = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+        filename = "guia_telefonica.json"
+
+    await update.message.reply_document(
+        document=io.BytesIO(content),
+        filename=filename,
+        caption=f"✅ {len(contactos)} contactos exportados ({formato.upper()})",
+    )
+
+
+async def importar_archivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Importar archivo enviado por admin"""
+    if not es_admin(update.effective_user.id):
+        return
+
+    doc = update.message.document
+    if not doc.file_name.endswith((".csv", ".json")):
+        await update.message.reply_text("⚠️ Solo acepto archivos .csv o .json")
+        return
+
+    await update.message.reply_text("⏳ Procesando archivo...")
+
+    file = await context.bot.get_file(doc.file_id)
+    import io
+    content_bytes = io.BytesIO()
+    await file.download_to_memory(content_bytes)
+    content = content_bytes.getvalue().decode("utf-8")
+
+    contactos = []
+    if doc.file_name.endswith(".csv"):
+        import csv as csv_module
+        reader = csv_module.DictReader(io.StringIO(content))
+        for row in reader:
+            if row.get("nombre") and row.get("telefono"):
+                contactos.append(row)
+    else:
+        import json
+        data = json.loads(content)
+        items = data.get("contactos", data) if isinstance(data, dict) else data
+        for item in items:
+            if item.get("nombre") and item.get("telefono"):
+                contactos.append(item)
+
+    nuevos, duplicados, errores = 0, 0, 0
+    for c in contactos:
+        resultado = db.registrar_contacto(
+            nombre=c.get("nombre", ""),
+            apellido=c.get("apellido", ""),
+            telefono=c.get("telefono", ""),
+            direccion=c.get("direccion"),
+            ci=c.get("ci"),
+            creado_por=str(update.effective_user.id),
+            creado_desde="telegram",
+        )
+        if resultado.get("error"):
+            if "duplicate" in str(resultado["error"]).lower():
+                duplicados += 1
+            else:
+                errores += 1
+        else:
+            nuevos += 1
+
+    await update.message.reply_text(
+        f"✅ *Importación completada*\n\n"
+        f"📊 Procesados: {len(contactos)}\n"
+        f"✅ Nuevos: {nuevos}\n"
+        f"⚠️ Duplicados: {duplicados}\n"
+        f"❌ Errores: {errores}\n\n"
+        f"Los contactos quedan *pendientes* de aprobación.",
+        parse_mode="Markdown",
+    )
+
+
+# ============================================
 # MAIN
 # ============================================
 
@@ -545,6 +658,10 @@ def create_app():
     app.add_handler(CommandHandler("registrar_admin", registrar_admin))
     app.add_handler(CommandHandler("listar_admins", listar_admins))
     app.add_handler(CommandHandler("eliminar_admin", eliminar_admin))
+
+    # Comandos export/import
+    app.add_handler(CommandHandler("exportar", exportar))
+    app.add_handler(MessageHandler(filters.Document.ALL & filters.User(int(ADMIN_CHAT_ID)), importar_archivo))
 
     return app
 
