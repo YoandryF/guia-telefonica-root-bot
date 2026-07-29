@@ -47,7 +47,11 @@ def es_admin(chat_id: int) -> bool:
 
 def formatear_contacto(contacto: dict) -> str:
     """Formatear un contacto para mostrarlo en Telegram"""
-    texto = f"📌 *{contacto['nombre']} {contacto['apellido']}*\n"
+    # Verificar reportes
+    reportes = db.get_conteo_reportes(contacto['id'])
+    warning = " ⚠️" if reportes >= 3 else ""
+
+    texto = f"📌 *{contacto['nombre']} {contacto['apellido']}*{warning}\n"
     texto += f"   📱 `{contacto['telefono']}`\n"
     if contacto.get('direccion'):
         texto += f"   📍 {contacto['direccion']}\n"
@@ -55,6 +59,8 @@ def formatear_contacto(contacto: dict) -> str:
         texto += f"   🆔 {contacto['ci']}\n"
     if contacto.get('categoria_nombre'):
         texto += f"   📂 {contacto['categoria_nombre']}\n"
+    if reportes >= 3:
+        texto += f"   ⚠️ _Reportado {reportes} veces_\n"
     return texto
 
 
@@ -515,6 +521,106 @@ async def eliminar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ============================================
+# COMANDOS DE REPORTES
+# ============================================
+
+async def reportar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reportar un contacto. Uso: /reportar id motivo"""
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "⚠️ *Reportar contacto*\n\n"
+            "Uso: `/reportar ID motivo`\n\n"
+            "Motivos válidos:\n"
+            "• `numero_incorrecto`\n"
+            "• `no_existe`\n"
+            "• `spam`\n"
+            "• `duplicado`\n"
+            "• `otro`\n\n"
+            "Ejemplo: `/reportar abc123 spam`",
+            parse_mode="Markdown",
+        )
+        return
+
+    contacto_id = context.args[0]
+    motivo = context.args[1]
+    descripcion = " ".join(context.args[2:]) if len(context.args) > 2 else None
+
+    motivos_validos = ['numero_incorrecto', 'no_existe', 'spam', 'duplicado', 'otro']
+    if motivo not in motivos_validos:
+        await update.message.reply_text(f"⚠️ Motivo inválido. Usa uno de: {', '.join(motivos_validos)}")
+        return
+
+    resultado = db.reportar_contacto(
+        contacto_id=contacto_id,
+        motivo=motivo,
+        descripcion=descripcion,
+        reportado_por=str(update.effective_user.id),
+    )
+
+    if resultado.get("error"):
+        await update.message.reply_text(f"❌ Error: {resultado['error']}")
+    else:
+        await update.message.reply_text("⚠️ Reporte enviado. Gracias por informar.")
+
+        # Notificar al admin
+        if ADMIN_CHAT_ID:
+            try:
+                await context.bot.send_message(
+                    chat_id=ADMIN_CHAT_ID,
+                    text=f"🚨 *Nuevo reporte*\n\nContacto: `{contacto_id}`\nMotivo: {motivo}\nPor: {update.effective_user.first_name}\n\nUsa /reportes para ver todos",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+
+
+async def reportes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ver reportes pendientes (solo admin)"""
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo el administrador puede usar este comando.")
+        return
+
+    lista = db.get_reportes_pendientes()
+
+    if not lista:
+        await update.message.reply_text("✅ No hay reportes pendientes.")
+        return
+
+    texto = f"🚨 *Reportes pendientes ({len(lista)}):*\n\n"
+    for r in lista[:20]:
+        contacto = r.get("contactos", {})
+        nombre = f"{contacto.get('nombre', '')} {contacto.get('apellido', '')}"
+        texto += (
+            f"🆔 `{r['id'][:8]}`\n"
+            f"👤 {nombre} ({contacto.get('telefono', '')})\n"
+            f"⚠️ Motivo: {r['motivo']}\n"
+            f"💬 {r.get('descripcion', 'Sin descripción')}\n"
+            f"✅ `/desestimar {r['id'][:8]}`\n\n"
+        )
+
+    await update.message.reply_text(texto, parse_mode="Markdown")
+
+
+async def desestimar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Desestimar un reporte (solo admin)"""
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo el administrador puede usar este comando.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usa: `/desestimar ID`", parse_mode="Markdown")
+        return
+
+    reporte_id = context.args[0]
+    resultado = db.desestimar_reporte(reporte_id)
+
+    if resultado.get("error"):
+        await update.message.reply_text(f"❌ Error: {resultado['error']}")
+    else:
+        await update.message.reply_text("✅ Reporte desestimado.")
+
+
+# ============================================
 # COMANDOS DE EXPORTACIÓN/IMPORTACIÓN
 # ============================================
 
@@ -662,6 +768,11 @@ def create_app():
     # Comandos export/import
     app.add_handler(CommandHandler("exportar", exportar))
     app.add_handler(MessageHandler(filters.Document.ALL & filters.User(int(ADMIN_CHAT_ID)), importar_archivo))
+
+    # Comandos reportes
+    app.add_handler(CommandHandler("reportar", reportar))
+    app.add_handler(CommandHandler("reportes", reportes))
+    app.add_handler(CommandHandler("desestimar", desestimar))
 
     return app
 

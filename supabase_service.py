@@ -329,6 +329,59 @@ class SupabaseService:
             logger.error(f"Error registrando historial: {e}")
 
     # ============================================
+    # REPORTES
+    # ============================================
+
+    def reportar_contacto(self, contacto_id: str, motivo: str, descripcion: str = None, reportado_por: str = None) -> dict:
+        """Reportar un contacto"""
+        if not self._check_client():
+            return {"error": "BD no disponible"}
+        try:
+            self.client.table("reportes").insert({
+                "contacto_id": contacto_id,
+                "motivo": motivo,
+                "descripcion": descripcion,
+                "reportado_por": reportado_por,
+                "reportado_desde": "telegram",
+            }).execute()
+            return {"data": "ok"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_conteo_reportes(self, contacto_id: str) -> int:
+        """Obtener cantidad de reportes activos de un contacto"""
+        if not self._check_client():
+            return 0
+        try:
+            response = self.client.table("reportes").select("id", count="exact").eq("contacto_id", contacto_id).eq("estado", "pendiente").execute()
+            return response.count or 0
+        except Exception:
+            return 0
+
+    def get_reportes_pendientes(self) -> list:
+        """Obtener reportes pendientes con datos del contacto"""
+        if not self._check_client():
+            return []
+        try:
+            response = self.client.table("reportes").select("*, contactos(nombre, apellido, telefono)").eq("estado", "pendiente").order("fecha_reporte").execute()
+            return response.data
+        except Exception as e:
+            logger.error(f"Error obteniendo reportes: {e}")
+            return []
+
+    def desestimar_reporte(self, reporte_id: str) -> dict:
+        """Desestimar un reporte"""
+        if not self._check_client():
+            return {"error": "BD no disponible"}
+        try:
+            response = self.client.table("reportes").update({"estado": "resuelto"}).like("id", f"{reporte_id}%").execute()
+            if not response.data:
+                return {"error": "Reporte no encontrado"}
+            return {"data": "ok"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ============================================
     # HEALTH CHECK
     # ============================================
 
