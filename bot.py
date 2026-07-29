@@ -96,8 +96,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/buscar `texto` - Buscar por nombre/teléfono/CI\n"
         "/agregar - Registrar nuevo contacto\n"
         "/miscontactos - Mis contactos registrados\n"
-        "/categorias - Ver categorías disponibles\n"
-        "/ayuda - Más información\n"
+        "/categorias - Ver categorías\n"
+        "/reportar - Reportar un contacto\n"
+        "/ayuda - Todos los comandos\n"
     )
 
     if es_admin(user.id):
@@ -121,16 +122,33 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/listar - Lista contactos (paginado)\n"
         "/listar `N` - Página N de contactos\n"
         "/buscar `texto` - Busca por nombre, teléfono o CI\n"
-        "/contacto `id` - Ver detalles de un contacto\n"
         "/categorias - Ver categorías\n\n"
         "*Registro:*\n"
         "/agregar `Nombre, Apellido, Teléfono` - Mínimo\n"
         "/agregar `Nombre, Apellido, Teléfono, Dirección, CI` - Completo\n\n"
         "*Mis datos:*\n"
-        "/miscontactos - Contactos que has registrado\n"
-        "/estado `id` - Estado de un contacto\n\n"
-        "ℹ️ Los contactos nuevos quedan *pendientes* hasta que el admin los apruebe."
+        "/miscontactos - Contactos que has registrado\n\n"
+        "*Reportes:*\n"
+        "/reportar `id` `motivo` - Reportar contacto\n"
+        "  Motivos: numero\\_incorrecto, no\\_existe, spam, duplicado, otro\n"
     )
+
+    if es_admin(update.effective_user.id):
+        mensaje += (
+            "\n🔐 *Admin:*\n"
+            "/pendientes - Contactos por aprobar\n"
+            "/aprobar `id` - Aprobar contacto\n"
+            "/rechazar `id` `motivo` - Rechazar\n"
+            "/estadisticas - Ver estadísticas\n"
+            "/exportar `csv|json` - Exportar BD\n"
+            "/reportes - Ver reportes pendientes\n"
+            "/desestimar `id` - Desestimar reporte\n"
+            "\n👑 *Owner:*\n"
+            "/registrar\\_admin `email pass nombre`\n"
+            "/listar\\_admins\n"
+            "/eliminar\\_admin `email`\n"
+        )
+
     await update.message.reply_text(mensaje, parse_mode="Markdown")
 
 
