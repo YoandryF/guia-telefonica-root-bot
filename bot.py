@@ -64,7 +64,8 @@ def formatear_contacto(contacto: dict, mostrar_id: bool = False) -> str:
         texto += f"• 📂 Categoría: {contacto['categoria_nombre']}\n"
     tel = contacto['telefono'].replace('-', '').replace(' ', '')
     if len(tel) >= 8:
-        texto += f"• 📲 Telegram | WhatsApp\n"
+        num = tel if tel.startswith("+") else f"53{tel}" if len(tel) == 8 else tel
+        texto += f"\u2022 \U0001f4f2 [Telegram](https://t.me/+{num}) | [WhatsApp](https://wa.me/{num})\\n"
     if reportes >= 3:
         texto += f"\n⚠️ _Reportado {reportes} veces_\n"
     texto += f"\n_Bot: @GuiaTelefonicaRootBot_"
