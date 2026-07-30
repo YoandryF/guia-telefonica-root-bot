@@ -774,9 +774,13 @@ def create_app():
     app.add_handler(CommandHandler("help", ayuda))
     app.add_handler(CommandHandler("listar", listar))
     app.add_handler(CommandHandler("buscar", buscar))
-    app.add_handler(CommandHandler("agregar", agregar))
     app.add_handler(CommandHandler("miscontactos", miscontactos))
     app.add_handler(CommandHandler("categorias", categorias))
+
+    # Flujos interactivos (ConversationHandler)
+    from conversations import get_agregar_handler, get_reportar_handler
+    app.add_handler(get_agregar_handler())
+    app.add_handler(get_reportar_handler())
 
     # Comandos admin
     app.add_handler(CommandHandler("pendientes", pendientes))
@@ -793,8 +797,7 @@ def create_app():
     app.add_handler(CommandHandler("exportar", exportar))
     app.add_handler(MessageHandler(filters.Document.ALL & filters.User(int(ADMIN_CHAT_ID)), importar_archivo))
 
-    # Comandos reportes
-    app.add_handler(CommandHandler("reportar", reportar))
+    # Comandos reportes (admin)
     app.add_handler(CommandHandler("reportes", reportes))
     app.add_handler(CommandHandler("desestimar", desestimar))
 
