@@ -158,18 +158,27 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Listar contactos aprobados (paginado)"""
+    """Listar contactos aprobados (paginado, con filtro por categoría)"""
     pagina = 1
+    categoria_filtro = None
+
     if context.args:
-        try:
-            pagina = int(context.args[0])
-        except ValueError:
-            pass
+        for arg in context.args:
+            try:
+                pagina = int(arg)
+            except ValueError:
+                categoria_filtro = arg.lower()
 
     contactos = db.get_contactos_aprobados()
 
+    if categoria_filtro:
+        contactos = [c for c in contactos if c.get('categoria_nombre', '').lower().find(categoria_filtro) >= 0]
+
     if not contactos:
-        await update.message.reply_text("📭 No hay contactos registrados aún.")
+        msg = "📭 No hay contactos"
+        if categoria_filtro:
+            msg += f" en la categoría '{categoria_filtro}'"
+        await update.message.reply_text(msg)
         return
 
     items, pag_actual, total_pags = paginar_contactos(contactos, pagina)

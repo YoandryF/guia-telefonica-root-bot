@@ -8,7 +8,7 @@ from supabase_service import SupabaseService
 db = SupabaseService()
 
 # === /agregar interactivo ===
-AGR_NOMBRE, AGR_APELLIDO, AGR_TELEFONO, AGR_DIRECCION, AGR_CI = range(5)
+AGR_NOMBRE, AGR_APELLIDO, AGR_TELEFONO, AGR_DIRECCION, AGR_CI, AGR_CATEGORIA = range(6)
 
 async def agregar_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Inicio de /agregar — si tiene args, procesa directo; si no, inicia flujo"""
@@ -71,14 +71,61 @@ async def agregar_direccion(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def agregar_ci(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text.strip()
-    ci = None if texto.lower() == 'no' else texto
+    context.user_data['ci'] = None if texto.lower() == 'no' else texto
+
+    # Obtener categorías para mostrar opciones
+    categorias = db.get_categorias()
+    if categorias:
+        teclado = [[f"{c.get('icono','')} {c['nombre']}"] for c in categorias]
+        teclado.append(["no"])
+        await update.message.reply_text(
+            "¿*Categoría*? (o escribe *no* para omitir)",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(teclado, resize_keyboard=True, one_time_keyboard=True),
+        )
+        return AGR_CATEGORIA
+    else:
+        context.user_data['categoria_id'] = None
+        return await _finalizar_registro(update, context)
+
+
+async def agregar_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    texto = update.message.text.strip()
+    if texto.lower() == 'no':
+        context.user_data['categoria_id'] = None
+    else:
+        # Buscar categoría por nombre
+        categorias = db.get_categorias()
+        cat_id = None
+        for c in categorias:
+            if c['nombre'].lower() in texto.lower() or texto.lower() in c['nombre'].lower():
+                cat_id = c['id']
+                break
+        context.user_data['categoria_id'] = cat_id
+    return await _finalizar_registro(update, context)
+
+
+async def _finalizar_registro(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = context.user_data
-    partes = [data['nombre'], data['apellido'], data['telefono']]
-    if data.get('direccion'):
-        partes.append(data['direccion'])
-    if ci:
-        partes.append(ci)
-    return await _registrar_contacto(update, context, partes)
+    resultado = db.registrar_contacto(
+        nombre=data['nombre'], apellido=data['apellido'], telefono=data['telefono'],
+        direccion=data.get('direccion'), ci=data.get('ci'),
+        creado_por=str(update.effective_user.id), creado_desde="telegram",
+    )
+
+    if resultado.get("error"):
+        error = resultado["error"]
+        if "duplicate" in str(error).lower():
+            await update.message.reply_text("⚠️ Ese teléfono o CI ya está registrado.", reply_markup=ReplyKeyboardRemove())
+        else:
+            await update.message.reply_text(f"❌ Error: {error}", reply_markup=ReplyKeyboardRemove())
+    else:
+        await update.message.reply_text(
+            f"✅ *Contacto registrado*\n\n👤 {data['nombre']} {data['apellido']}\n📱 {data['telefono']}\n\n⏳ Pendiente de aprobación.",
+            parse_mode="Markdown", reply_markup=ReplyKeyboardRemove(),
+        )
+    context.user_data.clear()
+    return ConversationHandler.END
 
 async def _registrar_contacto(update: Update, context: ContextTypes.DEFAULT_TYPE, partes: list):
     """Registrar el contacto en Supabase"""
@@ -212,6 +259,7 @@ def get_agregar_handler():
             AGR_TELEFONO: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_telefono)],
             AGR_DIRECCION: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_direccion)],
             AGR_CI: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_ci)],
+            AGR_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_categoria)],
         },
         fallbacks=[CommandHandler("cancelar", cancelar)],
     )
