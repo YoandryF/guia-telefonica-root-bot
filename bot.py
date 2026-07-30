@@ -46,23 +46,28 @@ def es_admin(chat_id: int) -> bool:
 
 
 def formatear_contacto(contacto: dict, mostrar_id: bool = False) -> str:
-    """Formatear un contacto para mostrarlo en Telegram"""
-    # Verificar reportes
+    """Formatear un contacto estilo profesional"""
     reportes = db.get_conteo_reportes(contacto['id'])
     warning = " ⚠️" if reportes >= 3 else ""
+    nombre = f"{contacto['nombre']} {contacto['apellido']}".upper()
 
-    texto = f"📌 *{contacto['nombre']} {contacto['apellido']}*{warning}\n"
+    texto = f"📋 *Detalles del contacto:*{warning}\n\n"
     if mostrar_id:
-        texto += f"   🆔 ID: `{contacto['id'][:8]}`\n"
-    texto += f"   📱 `{contacto['telefono']}`\n"
-    if contacto.get('direccion'):
-        texto += f"   📍 {contacto['direccion']}\n"
+        texto += f"• 🔑 ID: `{contacto['id'][:8]}`\n"
+    texto += f"• 📱 Número: `{contacto['telefono']}`\n"
+    texto += f"• 👤 A nombre de: {nombre}\n"
     if contacto.get('ci'):
-        texto += f"   🆔 {contacto['ci']}\n"
+        texto += f"• 🆔 Carné de identidad: `{contacto['ci']}`\n"
+    if contacto.get('direccion'):
+        texto += f"• 📍 Dirección: {contacto['direccion']}\n"
     if contacto.get('categoria_nombre'):
-        texto += f"   📂 {contacto['categoria_nombre']}\n"
+        texto += f"• 📂 Categoría: {contacto['categoria_nombre']}\n"
+    tel = contacto['telefono'].replace('-', '').replace(' ', '')
+    if len(tel) >= 8:
+        texto += f"• 📲 Telegram | WhatsApp\n"
     if reportes >= 3:
-        texto += f"   ⚠️ _Reportado {reportes} veces_\n"
+        texto += f"\n⚠️ _Reportado {reportes} veces_\n"
+    texto += f"\n_Bot: @GuiaTelefonicaRootBot_"
     return texto
 
 
