@@ -138,6 +138,48 @@ class SupabaseService:
             logger.error(f"Error obteniendo pendientes: {e}")
             return []
 
+    def buscar_por_telefono(self, telefono: str) -> dict:
+        """Buscar contacto por teléfono (exacto o parcial)"""
+        if not self._check_client():
+            return None
+
+        try:
+            response = (
+                self.client.table("contactos")
+                .select("*")
+                .ilike("telefono", f"%{telefono}%")
+                .is_("deleted_at", "null")
+                .limit(1)
+                .execute()
+            )
+            return response.data[0] if response.data else None
+        except Exception as e:
+            logger.error(f"Error buscando por teléfono: {e}")
+            return None
+
+    def buscar_por_id_o_telefono(self, identificador: str) -> dict:
+        """Buscar contacto por ID parcial o teléfono"""
+        if not self._check_client():
+            return None
+
+        try:
+            # Primero intentar por ID
+            response = (
+                self.client.table("contactos")
+                .select("*")
+                .like("id", f"{identificador}%")
+                .is_("deleted_at", "null")
+                .execute()
+            )
+            if response.data:
+                return response.data[0]
+
+            # Si no, buscar por teléfono
+            return self.buscar_por_telefono(identificador)
+        except Exception as e:
+            logger.error(f"Error buscando contacto: {e}")
+            return None
+
     def get_contactos_por_creador(self, chat_id: str) -> list:
         """Obtener contactos registrados por un usuario"""
         if not self._check_client():
@@ -157,20 +199,30 @@ class SupabaseService:
             logger.error(f"Error obteniendo contactos por creador: {e}")
             return []
 
-    def aprobar_contacto(self, contacto_id: str, aprobado_por: str = None) -> dict:
-        """Aprobar un contacto pendiente"""
+    def aprobar_contacto(self, identificador: str, aprobado_por: str = None) -> dict:
+        """Aprobar un contacto pendiente (busca por ID parcial o teléfono)"""
         if not self._check_client():
             return {"error": "BD no disponible"}
 
         try:
-            # Buscar contacto por ID parcial
+            # Buscar por ID parcial
             response = (
                 self.client.table("contactos")
                 .select("*")
-                .like("id", f"{contacto_id}%")
+                .like("id", f"{identificador}%")
                 .eq("estado", "pendiente")
                 .execute()
             )
+
+            # Si no, buscar por teléfono
+            if not response.data:
+                response = (
+                    self.client.table("contactos")
+                    .select("*")
+                    .ilike("telefono", f"%{identificador}%")
+                    .eq("estado", "pendiente")
+                    .execute()
+                )
 
             if not response.data:
                 return {"error": "Contacto no encontrado o ya procesado"}
@@ -199,20 +251,30 @@ class SupabaseService:
             logger.error(f"Error aprobando contacto: {e}")
             return {"error": str(e)}
 
-    def rechazar_contacto(self, contacto_id: str, motivo: str = None) -> dict:
-        """Rechazar un contacto pendiente"""
+    def rechazar_contacto(self, identificador: str, motivo: str = None) -> dict:
+        """Rechazar un contacto pendiente (busca por ID parcial o teléfono)"""
         if not self._check_client():
             return {"error": "BD no disponible"}
 
         try:
-            # Buscar contacto por ID parcial
+            # Buscar por ID parcial
             response = (
                 self.client.table("contactos")
                 .select("*")
-                .like("id", f"{contacto_id}%")
+                .like("id", f"{identificador}%")
                 .eq("estado", "pendiente")
                 .execute()
             )
+
+            # Si no, buscar por teléfono
+            if not response.data:
+                response = (
+                    self.client.table("contactos")
+                    .select("*")
+                    .ilike("telefono", f"%{identificador}%")
+                    .eq("estado", "pendiente")
+                    .execute()
+                )
 
             if not response.data:
                 return {"error": "Contacto no encontrado o ya procesado"}

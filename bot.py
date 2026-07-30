@@ -45,13 +45,15 @@ def es_admin(chat_id: int) -> bool:
     return str(chat_id) == str(ADMIN_CHAT_ID)
 
 
-def formatear_contacto(contacto: dict) -> str:
+def formatear_contacto(contacto: dict, mostrar_id: bool = False) -> str:
     """Formatear un contacto para mostrarlo en Telegram"""
     # Verificar reportes
     reportes = db.get_conteo_reportes(contacto['id'])
     warning = " ⚠️" if reportes >= 3 else ""
 
     texto = f"📌 *{contacto['nombre']} {contacto['apellido']}*{warning}\n"
+    if mostrar_id:
+        texto += f"   🆔 ID: `{contacto['id'][:8]}`\n"
     texto += f"   📱 `{contacto['telefono']}`\n"
     if contacto.get('direccion'):
         texto += f"   📍 {contacto['direccion']}\n"
@@ -171,7 +173,7 @@ async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     texto = f"📋 *Contactos aprobados* (pág {pag_actual}/{total_pags})\n\n"
     for c in items:
-        texto += formatear_contacto(c) + "\n"
+        texto += formatear_contacto(c, mostrar_id=es_admin(update.effective_user.id)) + "\n"
 
     texto += f"\n📊 Total: {len(contactos)} contactos"
     if total_pags > 1:
@@ -198,7 +200,7 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     texto = f"🔍 *Resultados para:* `{query}`\n\n"
     for c in contactos[:20]:
-        texto += formatear_contacto(c) + "\n"
+        texto += formatear_contacto(c, mostrar_id=es_admin(update.effective_user.id)) + "\n"
 
     if len(contactos) > 20:
         texto += f"\n... y {len(contactos) - 20} más"
@@ -365,13 +367,11 @@ async def aprobar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
-        await update.message.reply_text("Usa: `/aprobar ID`", parse_mode="Markdown")
+        await update.message.reply_text("Usa: `/aprobar teléfono` o `/aprobar ID`", parse_mode="Markdown")
         return
 
-    contacto_id = context.args[0]
-    comentario = " ".join(context.args[1:]) if len(context.args) > 1 else None
-
-    resultado = db.aprobar_contacto(contacto_id, aprobado_por=str(update.effective_user.id))
+    identificador = context.args[0]
+    resultado = db.aprobar_contacto(identificador, aprobado_por=str(update.effective_user.id))
 
     if resultado.get("error"):
         await update.message.reply_text(f"❌ Error: {resultado['error']}")
@@ -568,8 +568,14 @@ async def reportar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Motivo inválido. Usa uno de: {', '.join(motivos_validos)}")
         return
 
+    # Buscar contacto por ID o teléfono
+    contacto = db.buscar_por_id_o_telefono(contacto_id)
+    if not contacto:
+        await update.message.reply_text("❌ Contacto no encontrado.")
+        return
+
     resultado = db.reportar_contacto(
-        contacto_id=contacto_id,
+        contacto_id=contacto['id'],
         motivo=motivo,
         descripcion=descripcion,
         reportado_por=str(update.effective_user.id),
