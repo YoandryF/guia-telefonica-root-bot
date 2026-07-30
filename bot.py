@@ -539,6 +539,122 @@ async def eliminar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ============================================
+# COMANDOS DE ELIMINACIÓN Y EDICIÓN
+# ============================================
+
+async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Eliminar contacto (solo admin). Uso: /eliminar teléfono|ID"""
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo el administrador puede usar este comando.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usa: `/eliminar teléfono` o `/eliminar ID`", parse_mode="Markdown")
+        return
+
+    identificador = context.args[0]
+    contacto = db.buscar_por_id_o_telefono(identificador)
+
+    if not contacto:
+        await update.message.reply_text("❌ Contacto no encontrado.")
+        return
+
+    # Soft delete
+    from datetime import datetime as dt
+    try:
+        db.client.table("contactos").update({"deleted_at": dt.utcnow().isoformat()}).eq("id", contacto["id"]).execute()
+        await update.message.reply_text(
+            f"🗑️ *Contacto eliminado*\n\n👤 {contacto['nombre']} {contacto['apellido']}\n📱 {contacto['telefono']}",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def cancelar_registro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancelar un registro propio pendiente. Uso: /cancelar_registro teléfono"""
+    if not context.args:
+        await update.message.reply_text("Usa: `/cancelar_registro teléfono`", parse_mode="Markdown")
+        return
+
+    identificador = context.args[0]
+    chat_id = str(update.effective_user.id)
+
+    try:
+        # Buscar contacto pendiente creado por este usuario
+        response = db.client.table("contactos").select("*").ilike("telefono", f"%{identificador}%").eq("estado", "pendiente").eq("creado_por", chat_id).execute()
+
+        if not response.data:
+            await update.message.reply_text("❌ No se encontró un contacto pendiente tuyo con ese teléfono.")
+            return
+
+        contacto = response.data[0]
+        db.client.table("contactos").update({"deleted_at": datetime.utcnow().isoformat()}).eq("id", contacto["id"]).execute()
+
+        await update.message.reply_text(
+            f"✅ Registro cancelado: *{contacto['nombre']} {contacto['apellido']}* ({contacto['telefono']})",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def editar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Editar contacto (solo admin). Uso: /editar teléfono, campo, nuevo_valor"""
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo el administrador puede usar este comando.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "✏️ *Editar contacto*\n\n"
+            "Uso: `/editar teléfono, campo, nuevo_valor`\n\n"
+            "Campos: nombre, apellido, telefono, direccion, ci\n\n"
+            "Ejemplo:\n"
+            "`/editar 555-1234, nombre, Carlos`\n"
+            "`/editar 555-1234, direccion, Calle Nueva 5`",
+            parse_mode="Markdown",
+        )
+        return
+
+    texto = " ".join(context.args)
+    partes = [p.strip() for p in texto.split(",")]
+
+    if len(partes) < 3:
+        await update.message.reply_text("⚠️ Formato: `/editar teléfono, campo, nuevo_valor`", parse_mode="Markdown")
+        return
+
+    identificador = partes[0]
+    campo = partes[1].lower()
+    nuevo_valor = ", ".join(partes[2:])  # Por si el valor tiene comas
+
+    campos_validos = ['nombre', 'apellido', 'telefono', 'direccion', 'ci']
+    if campo not in campos_validos:
+        await update.message.reply_text(f"⚠️ Campo inválido. Usa: {', '.join(campos_validos)}")
+        return
+
+    contacto = db.buscar_por_id_o_telefono(identificador)
+    if not contacto:
+        await update.message.reply_text("❌ Contacto no encontrado.")
+        return
+
+    try:
+        db.client.table("contactos").update({
+            campo: nuevo_valor,
+            "ultima_modificacion": datetime.utcnow().isoformat(),
+        }).eq("id", contacto["id"]).execute()
+
+        await update.message.reply_text(
+            f"✏️ *Contacto actualizado*\n\n"
+            f"👤 {contacto['nombre']} {contacto['apellido']}\n"
+            f"📝 {campo} → *{nuevo_valor}*",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+# ============================================
 # COMANDOS DE REPORTES
 # ============================================
 
@@ -787,6 +903,11 @@ def create_app():
     app.add_handler(CommandHandler("aprobar", aprobar))
     app.add_handler(CommandHandler("rechazar", rechazar))
     app.add_handler(CommandHandler("estadisticas", estadisticas))
+    app.add_handler(CommandHandler("eliminar", eliminar))
+    app.add_handler(CommandHandler("editar", editar))
+
+    # Comandos usuario
+    app.add_handler(CommandHandler("cancelar_registro", cancelar_registro))
 
     # Comandos owner (gestión de admins)
     app.add_handler(CommandHandler("registrar_admin", registrar_admin))
