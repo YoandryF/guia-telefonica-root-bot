@@ -47,8 +47,10 @@ def es_admin(chat_id: int) -> bool:
 
 def formatear_contacto(contacto: dict, mostrar_id: bool = False) -> str:
     """Formatear un contacto estilo profesional"""
-    reportes = db.get_conteo_reportes(contacto['id'])
-    warning = " ⚠️" if reportes >= 3 else ""
+    info = db.get_info_reportes(contacto['id'])
+    mostrar_badge = info['mostrar']
+    verificado = info['verificado']
+    warning = " ⚠️" if mostrar_badge else ""
     nombre = f"{contacto['nombre']} {contacto['apellido']}".upper()
 
     texto = f"📋 *Detalles del contacto:*{warning}\n\n"
@@ -64,10 +66,14 @@ def formatear_contacto(contacto: dict, mostrar_id: bool = False) -> str:
         texto += f"• 📂 Categoría: {contacto['categoria_nombre']}\n"
     tel = contacto['telefono'].replace('-', '').replace(' ', '')
     if len(tel) >= 8:
-        num = tel if tel.startswith("+") else f"53{tel}" if len(tel) == 8 else tel
-        texto += f"\u2022 \U0001f4f2 [Telegram](https://t.me/+{num}) | [WhatsApp](https://wa.me/{num})\\n"
-    if reportes >= 3:
-        texto += f"\n⚠️ _Reportado {reportes} veces_\n"
+        num = tel if tel.startswith('+') else f"53{tel}" if len(tel) == 8 else tel
+        texto += f"• 📲 [Telegram](https://t.me/+{num}) | [WhatsApp](https://wa.me/{num})\n"
+    if mostrar_badge:
+        if verificado:
+            texto += f"\n⚠️ _Contacto verificado como riesgoso_\n"
+        else:
+            total = info['pendientes']
+            texto += f"\n⚠️ _Reportado {total} veces_\n"
     texto += f"\n_Bot: @GuiaTelefonicaRootBot_"
     return texto
 

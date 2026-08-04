@@ -415,10 +415,23 @@ class SupabaseService:
         if not self._check_client():
             return 0
         try:
-            response = self.client.table("reportes").select("id", count="exact").eq("contacto_id", contacto_id).eq("estado", "pendiente").execute()
+            response = self.client.table("reportes").select("id", count="exact").eq("contacto_id", contacto_id).in_("estado", ["pendiente", "revisado"]).execute()
             return response.count or 0
         except Exception:
             return 0
+
+    def get_info_reportes(self, contacto_id: str) -> dict:
+        """Info detallada de reportes: aprobados, pendientes, mostrarBadge"""
+        if not self._check_client():
+            return {"aprobados": 0, "pendientes": 0, "mostrar": False, "verificado": False}
+        try:
+            aprobados = self.client.table("reportes").select("id", count="exact").eq("contacto_id", contacto_id).eq("estado", "revisado").execute()
+            pendientes = self.client.table("reportes").select("id", count="exact").eq("contacto_id", contacto_id).eq("estado", "pendiente").execute()
+            a = aprobados.count or 0
+            p = pendientes.count or 0
+            return {"aprobados": a, "pendientes": p, "mostrar": a >= 1 or p >= 3, "verificado": a >= 1}
+        except Exception:
+            return {"aprobados": 0, "pendientes": 0, "mostrar": False, "verificado": False}
 
     def get_reportes_pendientes(self) -> list:
         """Obtener reportes pendientes con datos del contacto"""
