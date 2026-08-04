@@ -627,10 +627,10 @@ async def editar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "✏️ *Editar contacto*\n\n"
             "Uso: `/editar teléfono, campo, nuevo_valor`\n\n"
-            "Campos: nombre, apellido, telefono, direccion, ci\n\n"
+            "Campos: nombre, apellido, telefono, direccion, ci, categoria\n\n"
             "Ejemplo:\n"
             "`/editar 555-1234, nombre, Carlos`\n"
-            "`/editar 555-1234, direccion, Calle Nueva 5`",
+            "`/editar 555-1234, categoria, Médicos`",
             parse_mode="Markdown",
         )
         return
