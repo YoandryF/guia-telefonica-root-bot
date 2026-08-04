@@ -646,7 +646,7 @@ async def editar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     campo = partes[1].lower()
     nuevo_valor = ", ".join(partes[2:])  # Por si el valor tiene comas
 
-    campos_validos = ['nombre', 'apellido', 'telefono', 'direccion', 'ci']
+    campos_validos = ['nombre', 'apellido', 'telefono', 'direccion', 'ci', 'categoria']
     if campo not in campos_validos:
         await update.message.reply_text(f"⚠️ Campo inválido. Usa: {', '.join(campos_validos)}")
         return
@@ -657,10 +657,27 @@ async def editar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        db.client.table("contactos").update({
-            campo: nuevo_valor,
-            "ultima_modificacion": datetime.utcnow().isoformat(),
-        }).eq("id", contacto["id"]).execute()
+        # Si es categoría, buscar el ID por nombre
+        if campo == 'categoria':
+            categorias = db.get_categorias()
+            cat_id = None
+            for c in categorias:
+                if nuevo_valor.lower() in c['nombre'].lower() or c['nombre'].lower() in nuevo_valor.lower():
+                    cat_id = c['id']
+                    break
+            if not cat_id:
+                nombres = ", ".join([c['nombre'] for c in categorias])
+                await update.message.reply_text(f"⚠️ Categoría no encontrada. Disponibles: {nombres}")
+                return
+            db.client.table("contactos").update({
+                "categoria_id": cat_id,
+                "ultima_modificacion": datetime.utcnow().isoformat(),
+            }).eq("id", contacto["id"]).execute()
+        else:
+            db.client.table("contactos").update({
+                campo: nuevo_valor,
+                "ultima_modificacion": datetime.utcnow().isoformat(),
+            }).eq("id", contacto["id"]).execute()
 
         await update.message.reply_text(
             f"✏️ *Contacto actualizado*\n\n"
