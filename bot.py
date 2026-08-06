@@ -562,6 +562,32 @@ async def eliminar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Admin `{email}` desactivado.", parse_mode="Markdown")
 
 
+
+async def listanegra(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mostrar contactos reportados (lista negra)"""
+    contactos = db.get_contactos_aprobados()
+    reportados = []
+    for c in contactos:
+        info = db.get_info_reportes(c['id'])
+        if info['mostrar']:
+            reportados.append((c, info))
+
+    if not reportados:
+        await update.message.reply_text("\u2705 No hay contactos en la lista negra.")
+        return
+
+    texto = "\u26a0\ufe0f *Lista Negra* (" + str(len(reportados)) + " contactos):\n\n"
+    for c, info in reportados[:20]:
+        nombre = f"{c['nombre']} {c['apellido']}"
+        estado = "\U0001f534 Verificado" if info['verificado'] else f"\U0001f7e1 {info['pendientes']} reportes"
+        texto += f"\u2022 *{nombre}*\n   \U0001f4f1 `{c['telefono']}`\n   {estado}\n\n"
+
+    if len(reportados) > 20:
+        texto += f"... y {len(reportados) - 20} m\u00e1s"
+
+    await update.message.reply_text(texto, parse_mode="Markdown")
+
+
 # ============================================
 # COMANDOS DE ELIMINACIÓN Y EDICIÓN
 # ============================================
@@ -944,6 +970,7 @@ def create_app():
     app.add_handler(CommandHandler("aprobar", aprobar))
     app.add_handler(CommandHandler("rechazar", rechazar))
     app.add_handler(CommandHandler("estadisticas", estadisticas))
+    app.add_handler(CommandHandler("listanegra", listanegra))
     app.add_handler(CommandHandler("eliminar", eliminar))
     app.add_handler(CommandHandler("editar", editar))
 
