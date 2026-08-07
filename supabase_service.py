@@ -43,7 +43,7 @@ class SupabaseService:
                 self.client.table("contactos")
                 .select("*, categorias(nombre, icono)")
                 .eq("estado", "aprobado")
-                .is_("deleted_at", "null")
+                .filter("deleted_at", "is", "null")
                 .order("nombre")
                 .execute()
             )
@@ -70,7 +70,7 @@ class SupabaseService:
                 self.client.table("contactos")
                 .select("*, categorias(nombre, icono)")
                 .eq("estado", "aprobado")
-                .is_("deleted_at", "null")
+                .filter("deleted_at", "is", "null")
                 .or_(
                     f"nombre.ilike.%{query}%,"
                     f"apellido.ilike.%{query}%,"
@@ -129,7 +129,7 @@ class SupabaseService:
                 self.client.table("contactos")
                 .select("*")
                 .eq("estado", "pendiente")
-                .is_("deleted_at", "null")
+                .filter("deleted_at", "is", "null")
                 .order("fecha_creacion", desc=False)
                 .execute()
             )
@@ -148,7 +148,7 @@ class SupabaseService:
                 self.client.table("contactos")
                 .select("*")
                 .ilike("telefono", f"%{telefono}%")
-                .is_("deleted_at", "null")
+                .filter("deleted_at", "is", "null")
                 .limit(1)
                 .execute()
             )
@@ -168,7 +168,7 @@ class SupabaseService:
                 self.client.table("contactos")
                 .select("*")
                 .like("id", f"{identificador}%")
-                .is_("deleted_at", "null")
+                .filter("deleted_at", "is", "null")
                 .execute()
             )
             if response.data:
@@ -190,7 +190,7 @@ class SupabaseService:
                 self.client.table("contactos")
                 .select("*")
                 .eq("creado_por", chat_id)
-                .is_("deleted_at", "null")
+                .filter("deleted_at", "is", "null")
                 .order("fecha_creacion", desc=True)
                 .execute()
             )
@@ -334,9 +334,9 @@ class SupabaseService:
             return {}
 
         try:
-            aprobados = self.client.table("contactos").select("id", count="exact").eq("estado", "aprobado").is_("deleted_at", "null").execute()
-            pendientes = self.client.table("contactos").select("id", count="exact").eq("estado", "pendiente").is_("deleted_at", "null").execute()
-            rechazados = self.client.table("contactos").select("id", count="exact").eq("estado", "rechazado").is_("deleted_at", "null").execute()
+            aprobados = self.client.table("contactos").select("id", count="exact").eq("estado", "aprobado").filter("deleted_at", "is", "null").execute()
+            pendientes = self.client.table("contactos").select("id", count="exact").eq("estado", "pendiente").filter("deleted_at", "is", "null").execute()
+            rechazados = self.client.table("contactos").select("id", count="exact").eq("estado", "rechazado").filter("deleted_at", "is", "null").execute()
             usuarios = self.client.table("usuarios_telegram").select("chat_id", count="exact").execute()
 
             return {
