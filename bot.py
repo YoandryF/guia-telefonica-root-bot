@@ -357,7 +357,7 @@ async def categorias(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================
 
 async def pendientes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver contactos pendientes de aprobación (solo admin)"""
+    """Ver contactos pendientes de aprobación (solo admin) con botones"""
     if not es_admin(update.effective_user.id):
         await update.message.reply_text("🔒 Solo el administrador puede usar este comando.")
         return
@@ -368,20 +368,62 @@ async def pendientes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ No hay contactos pendientes de aprobación.")
         return
 
-    texto = f"⏳ *Contactos pendientes ({len(contactos)}):*\n\n"
-    for c in contactos:
-        texto += (
-            f"🆔 ID: `{c['id'][:8]}`\n"
-            f"👤 {c['nombre']} {c['apellido']}\n"
-            f"📱 {c['telefono']}\n"
-            f"📍 {c.get('direccion', 'N/A')}\n"
-            f"🆔 CI: {c.get('ci', 'N/A')}\n"
-            f"👁 Por: {c.get('creado_por', 'Desconocido')}\n"
-            f"✅ `/aprobar {c['id'][:8]}`\n"
-            f"❌ `/rechazar {c['id'][:8]} motivo`\n\n"
-        )
+    await update.message.reply_text(f"⏳ *{len(contactos)} contacto(s) pendiente(s):*", parse_mode="Markdown")
 
-    await update.message.reply_text(texto, parse_mode="Markdown")
+    for c in contactos[:10]:
+        texto = (
+            f"👤 *{c['nombre']} {c['apellido']}*\n"
+            f"📱 `{c['telefono']}`\n"
+        )
+        if c.get('direccion'):
+            texto += f"📍 {c['direccion']}\n"
+        if c.get('ci'):
+            texto += f"🆔 CI: {c['ci']}\n"
+
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Aprobar", callback_data=f"aprobar_{c['id'][:8]}"),
+                InlineKeyboardButton("❌ Rechazar", callback_data=f"rechazar_{c['id'][:8]}"),
+            ],
+            [
+                InlineKeyboardButton("🗑 Eliminar", callback_data=f"eliminar_{c['id'][:8]}"),
+            ],
+        ]
+        await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Manejar clicks en botones inline"""
+    query = update.callback_query
+    await query.answer()
+
+    if not es_admin(query.from_user.id):
+        await query.edit_message_text("🔒 Solo el administrador.")
+        return
+
+    data = query.data
+    if data.startswith("aprobar_"):
+        contacto_id = data.replace("aprobar_", "")
+        resultado = db.aprobar_contacto(contacto_id, aprobado_por=str(query.from_user.id))
+        if resultado.get("error"):
+            await query.edit_message_text(f"❌ Error: {resultado['error']}")
+        else:
+            contacto = resultado.get("data", {})
+            await query.edit_message_text(f"✅ *Aprobado:* {contacto.get('nombre', '')} {contacto.get('apellido', '')}", parse_mode="Markdown")
+
+    elif data.startswith("rechazar_"):
+        contacto_id = data.replace("rechazar_", "")
+        context.user_data['rechazar_id'] = contacto_id
+        await query.edit_message_text("❌ Escribe el motivo de rechazo:")
+
+    elif data.startswith("eliminar_"):
+        contacto_id = data.replace("eliminar_", "")
+        contacto = db.buscar_por_id_o_telefono(contacto_id)
+        if contacto:
+            db.client.table("contactos").update({"deleted_at": datetime.utcnow().isoformat()}).eq("id", contacto["id"]).execute()
+            await query.edit_message_text(f"🗑 *Eliminado:* {contacto['nombre']} {contacto['apellido']}", parse_mode="Markdown")
+        else:
+            await query.edit_message_text("❌ No encontrado.")
 
 
 async def aprobar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -996,6 +1038,7 @@ def create_app():
 
     # Comandos admin
     app.add_handler(CommandHandler("pendientes", pendientes))
+    app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(CommandHandler("aprobar", aprobar))
     app.add_handler(CommandHandler("rechazar", rechazar))
     app.add_handler(CommandHandler("estadisticas", estadisticas))
