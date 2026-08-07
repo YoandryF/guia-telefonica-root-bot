@@ -201,7 +201,7 @@ class SupabaseService:
             response = (
                 self.client.table("contactos")
                 .select("*")
-                .like("id", f"{identificador}%")
+                .filter("id::text", "like", f"{identificador}%")
                 .is_("deleted_at", None)
                 .execute()
             )
@@ -243,7 +243,7 @@ class SupabaseService:
             response = (
                 self.client.table("contactos")
                 .select("*")
-                .like("id", f"{identificador}%")
+                .filter("id::text", "like", f"{identificador}%")
                 .eq("estado", "pendiente")
                 .execute()
             )
@@ -295,7 +295,7 @@ class SupabaseService:
             response = (
                 self.client.table("contactos")
                 .select("*")
-                .like("id", f"{identificador}%")
+                .filter("id::text", "like", f"{identificador}%")
                 .eq("estado", "pendiente")
                 .execute()
             )
