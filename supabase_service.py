@@ -139,11 +139,15 @@ class SupabaseService:
             return []
 
     def buscar_por_telefono(self, telefono: str) -> dict:
-        """Buscar contacto por teléfono (exacto o parcial)"""
+        """Buscar contacto por teléfono (normalizado)"""
         if not self._check_client():
             return None
 
         try:
+            # Normalizar: solo dígitos
+            tel_limpio = ''.join(c for c in telefono if c.isdigit())
+
+            # Intentar búsqueda directa
             response = (
                 self.client.table("contactos")
                 .select("*")
@@ -152,7 +156,37 @@ class SupabaseService:
                 .limit(1)
                 .execute()
             )
-            return response.data[0] if response.data else None
+            if response.data:
+                return response.data[0]
+
+            # Si no encuentra, buscar con solo dígitos
+            if tel_limpio != telefono:
+                response = (
+                    self.client.table("contactos")
+                    .select("*")
+                    .ilike("telefono", f"%{tel_limpio}%")
+                    .filter("deleted_at", "is", "null")
+                    .limit(1)
+                    .execute()
+                )
+                if response.data:
+                    return response.data[0]
+
+            # Intentar con los últimos 8 dígitos (sin código país)
+            if len(tel_limpio) > 8:
+                ultimos8 = tel_limpio[-8:]
+                response = (
+                    self.client.table("contactos")
+                    .select("*")
+                    .ilike("telefono", f"%{ultimos8}%")
+                    .filter("deleted_at", "is", "null")
+                    .limit(1)
+                    .execute()
+                )
+                if response.data:
+                    return response.data[0]
+
+            return None
         except Exception as e:
             logger.error(f"Error buscando por teléfono: {e}")
             return None
