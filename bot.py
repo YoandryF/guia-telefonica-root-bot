@@ -599,20 +599,49 @@ async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
-        await update.message.reply_text("Usa: `/eliminar teléfono` o `/eliminar ID`", parse_mode="Markdown")
+        await update.message.reply_text(
+            "🗑️ *Eliminar contacto*\n\n"
+            "Usa: `/eliminar teléfono` o `/eliminar ID`\n\n"
+            "Ejemplo:\n"
+            "`/eliminar 555-1234`\n"
+            "`/eliminar abc123ef`",
+            parse_mode="Markdown",
+        )
         return
 
-    identificador = context.args[0]
+    identificador = " ".join(context.args)
     contacto = db.buscar_por_id_o_telefono(identificador)
 
+    if not contacto:
+        await update.message.reply_text("❌ Contacto no encontrado. Verifica el teléfono o ID.")
+        return
+
+    # Confirmar
+    nombre = f"{contacto['nombre']} {contacto['apellido']}"
+    await update.message.reply_text(
+        f"⚠️ *¿Eliminar este contacto?*\n\n"
+        f"👤 {nombre}\n📱 {contacto['telefono']}\n\n"
+        f"Envía `/confirmar_eliminar {contacto['id'][:8]}` para confirmar",
+        parse_mode="Markdown",
+    )
+
+
+async def confirmar_eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Confirmar eliminación de contacto"""
+    if not es_admin(update.effective_user.id):
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usa: `/confirmar_eliminar ID`", parse_mode="Markdown")
+        return
+
+    contacto = db.buscar_por_id_o_telefono(context.args[0])
     if not contacto:
         await update.message.reply_text("❌ Contacto no encontrado.")
         return
 
-    # Soft delete
-    from datetime import datetime as dt
     try:
-        db.client.table("contactos").update({"deleted_at": dt.utcnow().isoformat()}).eq("id", contacto["id"]).execute()
+        db.client.table("contactos").update({"deleted_at": datetime.utcnow().isoformat()}).eq("id", contacto["id"]).execute()
         await update.message.reply_text(
             f"🗑️ *Contacto eliminado*\n\n👤 {contacto['nombre']} {contacto['apellido']}\n📱 {contacto['telefono']}",
             parse_mode="Markdown",
@@ -972,6 +1001,7 @@ def create_app():
     app.add_handler(CommandHandler("estadisticas", estadisticas))
     app.add_handler(CommandHandler("listanegra", listanegra))
     app.add_handler(CommandHandler("eliminar", eliminar))
+    app.add_handler(CommandHandler("confirmar_eliminar", confirmar_eliminar))
     app.add_handler(CommandHandler("editar", editar))
 
     # Comandos usuario
