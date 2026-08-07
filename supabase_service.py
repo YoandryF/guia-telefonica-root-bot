@@ -197,19 +197,22 @@ class SupabaseService:
             return None
 
         try:
-            # Primero intentar por ID
-            response = (
-                self.client.table("contactos")
-                .select("*")
-                .filter("id::text", "like", f"{identificador}%")
-                .is_("deleted_at", None)
-                .execute()
-            )
-            if response.data:
-                return response.data[0]
-
-            # Si no, buscar por teléfono
-            return self.buscar_por_telefono(identificador)
+            # Si tiene letras, probablemente es un ID (UUID parcial)
+            if any(c.isalpha() for c in identificador):
+                # Traer todos y filtrar en Python por ID parcial
+                response = (
+                    self.client.table("contactos")
+                    .select("*")
+                    .is_("deleted_at", None)
+                    .execute()
+                )
+                for c in response.data:
+                    if c['id'].startswith(identificador):
+                        return c
+                return None
+            else:
+                # Es un número, buscar por teléfono
+                return self.buscar_por_telefono(identificador)
         except Exception as e:
             logger.error(f"Error buscando contacto: {e}")
             return None
@@ -243,7 +246,7 @@ class SupabaseService:
             response = (
                 self.client.table("contactos")
                 .select("*")
-                .filter("id::text", "like", f"{identificador}%")
+                .eq("id", identificador) if len(identificador) > 30 else None
                 .eq("estado", "pendiente")
                 .execute()
             )
@@ -295,7 +298,7 @@ class SupabaseService:
             response = (
                 self.client.table("contactos")
                 .select("*")
-                .filter("id::text", "like", f"{identificador}%")
+                .eq("id", identificador) if len(identificador) > 30 else None
                 .eq("estado", "pendiente")
                 .execute()
             )
