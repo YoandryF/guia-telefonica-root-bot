@@ -402,6 +402,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     data = query.data
+
     if data.startswith("aprobar_"):
         contacto_id = data.replace("aprobar_", "")
         resultado = db.aprobar_contacto(contacto_id, aprobado_por=str(query.from_user.id))
@@ -410,11 +411,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             contacto = resultado.get("data", {})
             await query.edit_message_text(f"✅ *Aprobado:* {contacto.get('nombre', '')} {contacto.get('apellido', '')}", parse_mode="Markdown")
+            # Notificar al creador
+            if contacto.get("creado_por") and contacto.get("creado_desde") == "telegram":
+                try:
+                    await query.bot.send_message(chat_id=contacto["creado_por"], text=f"✅ Tu contacto *{contacto['nombre']} {contacto['apellido']}* fue aprobado!", parse_mode="Markdown")
+                except Exception:
+                    pass
 
     elif data.startswith("rechazar_"):
         contacto_id = data.replace("rechazar_", "")
         context.user_data['rechazar_id'] = contacto_id
-        await query.edit_message_text("❌ Escribe el motivo de rechazo:")
+        await query.edit_message_text("❌ Escribe el motivo de rechazo (envía un mensaje):")
 
     elif data.startswith("eliminar_"):
         contacto_id = data.replace("eliminar_", "")
@@ -424,6 +431,18 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(f"🗑 *Eliminado:* {contacto['nombre']} {contacto['apellido']}", parse_mode="Markdown")
         else:
             await query.edit_message_text("❌ No encontrado.")
+
+    elif data.startswith("confirmar_del_"):
+        contacto_id = data.replace("confirmar_del_", "")
+        contacto = db.buscar_por_id_o_telefono(contacto_id)
+        if contacto:
+            db.client.table("contactos").update({"deleted_at": datetime.utcnow().isoformat()}).eq("id", contacto["id"]).execute()
+            await query.edit_message_text(f"🗑 *Eliminado:* {contacto['nombre']} {contacto['apellido']}", parse_mode="Markdown")
+        else:
+            await query.edit_message_text("❌ No encontrado.")
+
+    elif data == "cancelar":
+        await query.edit_message_text("❌ Operación cancelada.")
 
 
 async def aprobar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -658,13 +677,19 @@ async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Contacto no encontrado. Verifica el teléfono o ID.")
         return
 
-    # Confirmar
+    # Confirmar con botones
     nombre = f"{contacto['nombre']} {contacto['apellido']}"
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Confirmar", callback_data=f"confirmar_del_{contacto['id'][:8]}"),
+            InlineKeyboardButton("❌ Cancelar", callback_data="cancelar"),
+        ]
+    ]
     await update.message.reply_text(
         f"⚠️ *¿Eliminar este contacto?*\n\n"
-        f"👤 {nombre}\n📱 {contacto['telefono']}\n\n"
-        f"Envía `/confirmar_eliminar {contacto['id'][:8]}` para confirmar",
+        f"👤 {nombre}\n📱 {contacto['telefono']}",
         parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
