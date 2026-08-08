@@ -1011,6 +1011,41 @@ async def desestimar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # COMANDOS DE EXPORTACIÓN/IMPORTACIÓN
 # ============================================
 
+
+async def banear_reportador(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Banear un reportador. Uso: /banear_reportador identificador [motivo]"""
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo el administrador.")
+        return
+    if not context.args:
+        await update.message.reply_text("Usa: `/banear_reportador dispositivo_id|chat_id [motivo]`", parse_mode="Markdown")
+        return
+    identificador = context.args[0]
+    motivo = " ".join(context.args[1:]) if len(context.args) > 1 else "Abuso de reportes"
+    try:
+        db.client.table("usuarios_baneados").insert({"identificador": identificador, "motivo": motivo, "baneado_por": str(update.effective_user.id)}).execute()
+        await update.message.reply_text(f"🚫 *Reportador baneado*\nID: `{identificador}`\nMotivo: {motivo}", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def desbanear(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Desbanear reportador. Uso: /desbanear identificador"""
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo el administrador.")
+        return
+    if not context.args:
+        await update.message.reply_text("Usa: `/desbanear identificador`", parse_mode="Markdown")
+        return
+    identificador = context.args[0]
+    try:
+        db.client.table("usuarios_baneados").delete().eq("identificador", identificador).execute()
+        await update.message.reply_text(f"✅ Reportador `{identificador}` desbaneado.", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+
 async def exportar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Exportar contactos (solo admin). Uso: /exportar csv|json"""
     if not es_admin(update.effective_user.id):
@@ -1175,6 +1210,8 @@ def create_app():
     # Comandos reportes (admin)
     app.add_handler(CommandHandler("reportes", reportes))
     app.add_handler(CommandHandler("desestimar", desestimar))
+    app.add_handler(CommandHandler("banear_reportador", banear_reportador))
+    app.add_handler(CommandHandler("desbanear", desbanear))
 
     return app
 
