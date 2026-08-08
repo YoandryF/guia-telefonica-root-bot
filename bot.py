@@ -41,7 +41,19 @@ db = SupabaseService()
 # ============================================
 
 def es_admin(chat_id: int) -> bool:
-    """Verificar si un chat_id es administrador"""
+    """Verificar si un chat_id es administrador o owner"""
+    if str(chat_id) == str(ADMIN_CHAT_ID):
+        return True
+    # Verificar en tabla admins
+    try:
+        response = db.client.table("admins").select("id").eq("chat_id_telegram", str(chat_id)).eq("activo", True).execute()
+        return len(response.data) > 0
+    except Exception:
+        return False
+
+
+def es_owner(chat_id: int) -> bool:
+    """Verificar si es el owner (solo uno)"""
     return str(chat_id) == str(ADMIN_CHAT_ID)
 
 
@@ -595,7 +607,7 @@ async def registrar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Registrar un nuevo admin (solo owner)
     Uso: /registrar_admin email password nombre
     """
-    if not es_admin(update.effective_user.id):
+    if not es_owner(update.effective_user.id):
         await update.message.reply_text("🔒 Solo el owner puede usar este comando.")
         return
 
@@ -630,7 +642,7 @@ async def registrar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def listar_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Listar admins registrados (solo owner)"""
-    if not es_admin(update.effective_user.id):
+    if not es_owner(update.effective_user.id):
         await update.message.reply_text("🔒 Solo el owner puede usar este comando.")
         return
 
@@ -652,7 +664,7 @@ async def eliminar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Desactivar un admin (solo owner)
     Uso: /eliminar_admin email
     """
-    if not es_admin(update.effective_user.id):
+    if not es_owner(update.effective_user.id):
         await update.message.reply_text("🔒 Solo el owner puede usar este comando.")
         return
 
