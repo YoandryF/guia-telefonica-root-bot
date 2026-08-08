@@ -1020,6 +1020,73 @@ async def desestimar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ============================================
+# AVALES Y RECLAMOS
+# ============================================
+
+async def avalar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Avalar un contacto (es legítimo). Uso: /avalar teléfono"""
+    if not context.args:
+        await update.message.reply_text("Usa: `/avalar teléfono`\nEjemplo: `/avalar 51001508`", parse_mode="Markdown")
+        return
+    contacto = db.buscar_por_id_o_telefono(context.args[0])
+    if not contacto:
+        await update.message.reply_text("❌ Contacto no encontrado.")
+        return
+    try:
+        db.client.table("avales").insert({"contacto_id": contacto["id"], "avalado_por": str(update.effective_user.id)}).execute()
+        await update.message.reply_text(f"👍 *Aval registrado* para {contacto['nombre']} {contacto['apellido']}", parse_mode="Markdown")
+    except Exception as e:
+        if "duplicate" in str(e).lower():
+            await update.message.reply_text("⚠️ Ya avalaste este contacto.")
+        else:
+            await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def reclamar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reclamar un contacto reportado. Uso: /reclamar teléfono mensaje"""
+    if len(context.args) < 2:
+        await update.message.reply_text("Usa: `/reclamar teléfono tu mensaje`\nEjemplo: `/reclamar 51001508 Soy el dueño, es legítimo`", parse_mode="Markdown")
+        return
+    contacto = db.buscar_por_id_o_telefono(context.args[0])
+    if not contacto:
+        await update.message.reply_text("❌ Contacto no encontrado.")
+        return
+    mensaje = " ".join(context.args[1:])
+    try:
+        db.client.table("reclamos").insert({"contacto_id": contacto["id"], "reclamante_id": str(update.effective_user.id), "mensaje": mensaje}).execute()
+        await update.message.reply_text("⚖️ *Reclamo enviado.* Un admin lo revisará.", parse_mode="Markdown")
+        if ADMIN_CHAT_ID:
+            await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=f"⚖️ *Nuevo reclamo*\n\n👤 {contacto['nombre']} {contacto['apellido']}\n📱 {contacto['telefono']}\n💬 {mensaje}\n\nUsa /reclamos para revisar", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def reclamos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ver reclamos pendientes (admin)"""
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo admin.")
+        return
+    try:
+        response = db.client.table("reclamos").select("*, contactos(nombre, apellido, telefono)").eq("estado", "pendiente").order("fecha").execute()
+        if not response.data:
+            await update.message.reply_text("✅ No hay reclamos pendientes.")
+            return
+        for r in response.data[:10]:
+            contacto = r.get("contactos", {})
+            nombre = f"{contacto.get('nombre','')} {contacto.get('apellido','')}"
+            keyboard = [[
+                InlineKeyboardButton("✅ Aceptar", callback_data=f"reclamo_aceptar_{r['id'][:8]}"),
+                InlineKeyboardButton("❌ Rechazar", callback_data=f"reclamo_rechazar_{r['id'][:8]}"),
+            ]]
+            await update.message.reply_text(
+                f"⚖️ *Reclamo*\n👤 {nombre} ({contacto.get('telefono','')})\n💬 {r.get('mensaje','')}",
+                parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+# ============================================
 # COMANDOS DE EXPORTACIÓN/IMPORTACIÓN
 # ============================================
 
@@ -1214,6 +1281,11 @@ def create_app():
     app.add_handler(CommandHandler("registrar_admin", registrar_admin))
     app.add_handler(CommandHandler("listar_admins", listar_admins))
     app.add_handler(CommandHandler("eliminar_admin", eliminar_admin))
+
+    # Avales y reclamos
+    app.add_handler(CommandHandler("avalar", avalar))
+    app.add_handler(CommandHandler("reclamar", reclamar))
+    app.add_handler(CommandHandler("reclamos", reclamos))
 
     # Comandos export/import
     app.add_handler(CommandHandler("exportar", exportar))
