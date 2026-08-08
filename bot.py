@@ -684,7 +684,18 @@ async def eliminar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_texto_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Capturar texto libre del admin (motivo de rechazo, filtro, etc.)"""
+    """Capturar texto libre del admin (motivo de rechazo, config, etc.)"""
+    # Editar configuración pendiente
+    if 'cfg_edit_clave' in context.user_data:
+        clave = context.user_data.pop('cfg_edit_clave')
+        valor = update.message.text.strip()
+        try:
+            db.client.table("configuracion").update({"valor": valor}).eq("clave", clave).execute()
+            await update.message.reply_text(f"\u2705 `{clave}` = *{valor}*", parse_mode="Markdown")
+        except Exception as e:
+            await update.message.reply_text(f"\u274c Error: {e}")
+        return
+
     # Motivo de rechazo pendiente
     if 'rechazar_id' in context.user_data:
         contacto_id = context.user_data.pop('rechazar_id')
@@ -1021,7 +1032,7 @@ async def desestimar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def config(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver configuración actual (solo owner)"""
+    """Ver configuración actual con botones (solo owner)"""
     if not es_owner(update.effective_user.id):
         await update.message.reply_text("\U0001f512 Solo el owner.")
         return
@@ -1030,11 +1041,13 @@ async def config(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not response.data:
             await update.message.reply_text("No hay configuraciones.")
             return
-        texto = "\u2699\ufe0f *Configuraci\u00f3n actual:*\n\n"
+        await update.message.reply_text("\u2699\ufe0f *Configuraci\u00f3n del sistema:*", parse_mode="Markdown")
         for item in response.data:
-            texto += f"\u2022 `{item['clave']}` = *{item['valor']}*\n   _{item.get('descripcion','')}_\n\n"
-        texto += "Para cambiar: `/setconfig clave valor`"
-        await update.message.reply_text(texto, parse_mode="Markdown")
+            keyboard = [[InlineKeyboardButton(f"\u270f\ufe0f Editar", callback_data=f"cfg_edit_{item['clave']}")]]
+            await update.message.reply_text(
+                f"\u2022 *{item['clave']}*\n   Valor: `{item['valor']}`\n   _{item.get('descripcion','')}_",
+                parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard),
+            )
     except Exception as e:
         await update.message.reply_text(f"\u274c Error: {e}")
 
