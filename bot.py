@@ -1080,6 +1080,50 @@ async def setconfig(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ============================================
+# VERIFICACIÓN DE CONTACTO
+# ============================================
+
+async def verificarme(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/verificarme teléfono - Solicitar verificación (soy el dueño)"""
+    if not context.args:
+        await update.message.reply_text("Usa: `/verificarme teléfono`\nEl teléfono debe coincidir con uno que tú registraste.", parse_mode="Markdown")
+        return
+    telefono = context.args[0]
+    chat_id = str(update.effective_user.id)
+    contacto = db.buscar_por_id_o_telefono(telefono)
+    if not contacto:
+        await update.message.reply_text("\u274c Contacto no encontrado.")
+        return
+    if contacto.get('creado_por') != chat_id:
+        await update.message.reply_text("\u274c Solo puedes verificar contactos que t\u00fa registraste.")
+        return
+    try:
+        db.client.table("contactos").update({"verificado": True}).eq("id", contacto["id"]).execute()
+        await update.message.reply_text(f"\u2705 *Contacto verificado:* {contacto['nombre']} {contacto['apellido']}\n\nAhora tiene badge verde \u2705", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"\u274c Error: {e}")
+
+
+async def verificar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/verificar teléfono - Admin verifica manualmente"""
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("\U0001f512 Solo admin.")
+        return
+    if not context.args:
+        await update.message.reply_text("Usa: `/verificar teléfono`", parse_mode="Markdown")
+        return
+    contacto = db.buscar_por_id_o_telefono(context.args[0])
+    if not contacto:
+        await update.message.reply_text("\u274c Contacto no encontrado.")
+        return
+    try:
+        db.client.table("contactos").update({"verificado": True}).eq("id", contacto["id"]).execute()
+        await update.message.reply_text(f"\u2705 *Verificado:* {contacto['nombre']} {contacto['apellido']} \u2705", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"\u274c Error: {e}")
+
+
+# ============================================
 # AVALES Y RECLAMOS
 # ============================================
 
@@ -1345,6 +1389,10 @@ def create_app():
     # Configuración (owner)
     app.add_handler(CommandHandler("config", config))
     app.add_handler(CommandHandler("setconfig", setconfig))
+
+    # Verificacion
+    app.add_handler(CommandHandler("verificarme", verificarme))
+    app.add_handler(CommandHandler("verificar", verificar))
 
     # Avales y reclamos
     app.add_handler(CommandHandler("avalar", avalar))
