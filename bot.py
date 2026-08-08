@@ -1019,6 +1019,46 @@ async def desestimar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Reporte desestimado.")
 
 
+
+async def config(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ver configuración actual (solo owner)"""
+    if not es_owner(update.effective_user.id):
+        await update.message.reply_text("\U0001f512 Solo el owner.")
+        return
+    try:
+        response = db.client.table("configuracion").select("*").order("clave").execute()
+        if not response.data:
+            await update.message.reply_text("No hay configuraciones.")
+            return
+        texto = "\u2699\ufe0f *Configuraci\u00f3n actual:*\n\n"
+        for item in response.data:
+            texto += f"\u2022 `{item['clave']}` = *{item['valor']}*\n   _{item.get('descripcion','')}_\n\n"
+        texto += "Para cambiar: `/setconfig clave valor`"
+        await update.message.reply_text(texto, parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"\u274c Error: {e}")
+
+
+async def setconfig(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cambiar configuraci\u00f3n (solo owner). Uso: /setconfig clave valor"""
+    if not es_owner(update.effective_user.id):
+        await update.message.reply_text("\U0001f512 Solo el owner.")
+        return
+    if len(context.args) < 2:
+        await update.message.reply_text("Usa: `/setconfig clave valor`\nEjemplo: `/setconfig reportes_dia_normal 5`", parse_mode="Markdown")
+        return
+    clave = context.args[0]
+    valor = " ".join(context.args[1:])
+    try:
+        response = db.client.table("configuracion").update({"valor": valor}).eq("clave", clave).execute()
+        if response.data:
+            await update.message.reply_text(f"\u2705 `{clave}` = *{valor}*", parse_mode="Markdown")
+        else:
+            await update.message.reply_text(f"\u274c Clave `{clave}` no encontrada.", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"\u274c Error: {e}")
+
+
 # ============================================
 # AVALES Y RECLAMOS
 # ============================================
@@ -1281,6 +1321,10 @@ def create_app():
     app.add_handler(CommandHandler("registrar_admin", registrar_admin))
     app.add_handler(CommandHandler("listar_admins", listar_admins))
     app.add_handler(CommandHandler("eliminar_admin", eliminar_admin))
+
+    # Configuración (owner)
+    app.add_handler(CommandHandler("config", config))
+    app.add_handler(CommandHandler("setconfig", setconfig))
 
     # Avales y reclamos
     app.add_handler(CommandHandler("avalar", avalar))
