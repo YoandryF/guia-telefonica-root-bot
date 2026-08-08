@@ -222,14 +222,21 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🔍 No se encontraron resultados para: *{query}*", parse_mode="Markdown")
         return
 
-    texto = f"🔍 *Resultados para:* `{query}`\n\n"
-    for c in contactos[:20]:
-        texto += formatear_contacto(c, mostrar_id=es_admin(update.effective_user.id)) + "\n"
+    admin = es_admin(update.effective_user.id)
+    await update.message.reply_text(f"🔍 *{len(contactos[:10])} resultado(s) para:* `{query}`", parse_mode="Markdown")
 
-    if len(contactos) > 20:
-        texto += f"\n... y {len(contactos) - 20} más"
+    for c in contactos[:10]:
+        texto = formatear_contacto(c, mostrar_id=admin)
+        if admin:
+            keyboard = [[
+                InlineKeyboardButton("🗑 Eliminar", callback_data=f"confirmar_del_{c['id'][:8]}"),
+            ]]
+            await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            await update.message.reply_text(texto, parse_mode="Markdown")
 
-    await update.message.reply_text(texto, parse_mode="Markdown")
+    if len(contactos) > 10:
+        await update.message.reply_text(f"... y {len(contactos) - 10} más. Refina tu búsqueda.")
 
 
 async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -357,39 +364,68 @@ async def categorias(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================
 
 async def pendientes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver contactos pendientes de aprobación (solo admin) con botones"""
+    """Ver contactos pendientes con filtro y paginación (botones)"""
     if not es_admin(update.effective_user.id):
-        await update.message.reply_text("🔒 Solo el administrador puede usar este comando.")
+        await update.message.reply_text("\U0001f512 Solo el administrador puede usar este comando.")
         return
 
+    # Filtro opcional
+    filtro = " ".join(context.args) if context.args else None
     contactos = db.get_contactos_pendientes()
 
+    if filtro:
+        f = filtro.lower()
+        contactos = [c for c in contactos if f in c.get('nombre','').lower() or f in c.get('apellido','').lower() or f in c.get('telefono','') or f in (c.get('ci') or '')]
+
     if not contactos:
-        await update.message.reply_text("✅ No hay contactos pendientes de aprobación.")
+        msg = "\u2705 No hay contactos pendientes"
+        if filtro:
+            msg += f" que coincidan con \"{filtro}\""
+        await update.message.reply_text(msg)
         return
 
-    await update.message.reply_text(f"⏳ *{len(contactos)} contacto(s) pendiente(s):*", parse_mode="Markdown")
+    # Paginación: 5 por mensaje
+    total = len(contactos)
+    pagina = context.user_data.get('pend_pagina', 0)
+    por_pagina = 5
+    inicio = pagina * por_pagina
+    fin = min(inicio + por_pagina, total)
+    lote = contactos[inicio:fin]
 
-    for c in contactos[:10]:
+    header = f"\u23f3 *Pendientes ({inicio+1}-{fin} de {total})*"
+    if filtro:
+        header += f" — filtro: \"{filtro}\""
+    await update.message.reply_text(header, parse_mode="Markdown")
+
+    for c in lote:
         texto = (
-            f"👤 *{c['nombre']} {c['apellido']}*\n"
-            f"📱 `{c['telefono']}`\n"
+            f"\U0001f464 *{c['nombre']} {c['apellido']}*\n"
+            f"\U0001f4f1 `{c['telefono']}`\n"
         )
         if c.get('direccion'):
-            texto += f"📍 {c['direccion']}\n"
+            texto += f"\U0001f4cd {c['direccion']}\n"
         if c.get('ci'):
-            texto += f"🆔 CI: {c['ci']}\n"
+            texto += f"\U0001f194 CI: {c['ci']}\n"
 
         keyboard = [
             [
-                InlineKeyboardButton("✅ Aprobar", callback_data=f"aprobar_{c['id'][:8]}"),
-                InlineKeyboardButton("❌ Rechazar", callback_data=f"rechazar_{c['id'][:8]}"),
+                InlineKeyboardButton("\u2705 Aprobar", callback_data=f"aprobar_{c['id'][:8]}"),
+                InlineKeyboardButton("\u274c Rechazar", callback_data=f"rechazar_{c['id'][:8]}"),
             ],
             [
-                InlineKeyboardButton("🗑 Eliminar", callback_data=f"eliminar_{c['id'][:8]}"),
+                InlineKeyboardButton("\U0001f5d1 Eliminar", callback_data=f"eliminar_{c['id'][:8]}"),
             ],
         ]
         await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    # Botones de navegación
+    nav = []
+    if inicio > 0:
+        nav.append(InlineKeyboardButton("\u2b05 Anterior", callback_data="pend_prev"))
+    if fin < total:
+        nav.append(InlineKeyboardButton("Siguiente \u27a1", callback_data="pend_next"))
+    if nav:
+        await update.message.reply_text(f"P\u00e1gina {pagina+1}/{(total+por_pagina-1)//por_pagina}", reply_markup=InlineKeyboardMarkup([nav]))
 
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -443,6 +479,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "cancelar":
         await query.edit_message_text("❌ Operación cancelada.")
+
+
+    elif data == "pend_prev":
+        context.user_data['pend_pagina'] = max(0, context.user_data.get('pend_pagina', 0) - 1)
+        await query.edit_message_text(f"⬅️ Usa /pendientes para ver página {context.user_data['pend_pagina']+1}")
+
+    elif data == "pend_next":
+        context.user_data['pend_pagina'] = context.user_data.get('pend_pagina', 0) + 1
+        await query.edit_message_text(f"➡️ Usa /pendientes para ver página {context.user_data['pend_pagina']+1}")
+
 
 
 async def aprobar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -624,8 +670,33 @@ async def eliminar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
+
+async def handle_texto_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Capturar texto libre del admin (motivo de rechazo, filtro, etc.)"""
+    # Motivo de rechazo pendiente
+    if 'rechazar_id' in context.user_data:
+        contacto_id = context.user_data.pop('rechazar_id')
+        motivo = update.message.text.strip()
+        resultado = db.rechazar_contacto(contacto_id, motivo=motivo)
+        if resultado.get("error"):
+            await update.message.reply_text(f"❌ Error: {resultado['error']}")
+        else:
+            contacto = resultado.get("data", {})
+            await update.message.reply_text(
+                f"❌ *Rechazado:* {contacto.get('nombre', '')} {contacto.get('apellido', '')}\n📝 Motivo: {motivo}",
+                parse_mode="Markdown",
+            )
+            if contacto.get("creado_por") and contacto.get("creado_desde") == "telegram":
+                try:
+                    await context.bot.send_message(chat_id=contacto["creado_por"], text=f"❌ Tu contacto *{contacto['nombre']} {contacto['apellido']}* fue rechazado.\nMotivo: {motivo}", parse_mode="Markdown")
+                except Exception:
+                    pass
+        return
+
+
+
 async def listanegra(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mostrar contactos reportados (lista negra)"""
+    """Mostrar contactos reportados (lista negra) con botones para admin"""
     contactos = db.get_contactos_aprobados()
     reportados = []
     for c in contactos:
@@ -637,16 +708,22 @@ async def listanegra(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("\u2705 No hay contactos en la lista negra.")
         return
 
-    texto = "\u26a0\ufe0f *Lista Negra* (" + str(len(reportados)) + " contactos):\n\n"
-    for c, info in reportados[:20]:
+    admin = es_admin(update.effective_user.id)
+    await update.message.reply_text(f"\u26a0\ufe0f *Lista Negra ({len(reportados)} contactos):*", parse_mode="Markdown")
+
+    for c, info in reportados[:10]:
         nombre = f"{c['nombre']} {c['apellido']}"
         estado = "\U0001f534 Verificado" if info['verificado'] else f"\U0001f7e1 {info['pendientes']} reportes"
-        texto += f"\u2022 *{nombre}*\n   \U0001f4f1 `{c['telefono']}`\n   {estado}\n\n"
+        texto = f"\u2022 *{nombre}*\n   \U0001f4f1 `{c['telefono']}`\n   {estado}"
 
-    if len(reportados) > 20:
-        texto += f"... y {len(reportados) - 20} m\u00e1s"
+        if admin:
+            keyboard = [[InlineKeyboardButton("\U0001f5d1 Eliminar", callback_data=f"confirmar_del_{c['id'][:8]}")]]
+            await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            await update.message.reply_text(texto, parse_mode="Markdown")
 
-    await update.message.reply_text(texto, parse_mode="Markdown")
+    if len(reportados) > 10:
+        await update.message.reply_text(f"... y {len(reportados) - 10} m\u00e1s")
 
 
 # ============================================
@@ -660,14 +737,21 @@ async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
+        # Mostrar últimos 5 contactos para elegir
+        contactos = db.get_contactos_aprobados()[-5:]
+        if not contactos:
+            await update.message.reply_text("No hay contactos.")
+            return
         await update.message.reply_text(
-            "🗑️ *Eliminar contacto*\n\n"
-            "Usa: `/eliminar teléfono` o `/eliminar ID`\n\n"
-            "Ejemplo:\n"
-            "`/eliminar 555-1234`\n"
-            "`/eliminar abc123ef`",
+            "🗑️ *¿Qué contacto eliminar?*\n\nElige uno o usa `/eliminar teléfono`:",
             parse_mode="Markdown",
         )
+        for c in contactos:
+            keyboard = [[InlineKeyboardButton(f"🗑️ {c['nombre']} {c['apellido']} - {c['telefono']}", callback_data=f"confirmar_del_{c['id'][:8]}")]]
+            await update.message.reply_text(
+                f"👤 {c['nombre']} {c['apellido']} — 📱 {c['telefono']}",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
         return
 
     identificador = " ".join(context.args)
@@ -1063,7 +1147,11 @@ def create_app():
 
     # Comandos admin
     app.add_handler(CommandHandler("pendientes", pendientes))
+    # Callback de botones inline
     app.add_handler(CallbackQueryHandler(callback_handler))
+
+    # Handler para texto libre (motivo de rechazo)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.User(int(ADMIN_CHAT_ID)), handle_texto_admin))
     app.add_handler(CommandHandler("aprobar", aprobar))
     app.add_handler(CommandHandler("rechazar", rechazar))
     app.add_handler(CommandHandler("estadisticas", estadisticas))
