@@ -493,6 +493,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Operación cancelada.")
 
 
+
+    elif data.startswith("cfg_edit_"):
+        clave = data.replace("cfg_edit_", "")
+        context.user_data['cfg_edit_clave'] = clave
+        await query.edit_message_text(f"✏️ Escribe el nuevo valor para `{clave}`:", parse_mode="Markdown")
+
+
     elif data == "pend_prev":
         context.user_data['pend_pagina'] = max(0, context.user_data.get('pend_pagina', 0) - 1)
         await query.edit_message_text(f"⬅️ Usa /pendientes para ver página {context.user_data['pend_pagina']+1}")
