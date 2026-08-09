@@ -1,39 +1,61 @@
-# 🤖 Guía Telefónica - Bot de Telegram
+# 🤖 Guía Telefónica — Bot de Telegram
 
-Bot de Telegram para la Guía Telefónica Colaborativa. Permite buscar, consultar y registrar contactos con sistema de aprobación administrativa.
+Bot de Telegram para la Guía Telefónica Colaborativa. Buscar, registrar, reportar y administrar contactos.
 
-## 🔗 Bot
-
-[@GuiaTelefonicaRootBot](https://t.me/GuiaTelefonicaRootBot)
-
-## 🛠️ Stack
-
-- **Python 3.11** + python-telegram-bot
-- **Supabase** (PostgreSQL) como base de datos
-- **Flask** para health check
-- **Render.com** para hosting (free tier)
-- **UptimeRobot** para keep-alive
+## 🔗 [@GuiaTelefonicaRootBot](https://t.me/GuiaTelefonicaRootBot)
 
 ## 📋 Comandos
 
 ### Públicos
 | Comando | Descripción |
-|---------|-------------|
-| `/start` | Mensaje de bienvenida |
-| `/ayuda` | Lista de comandos |
-| `/listar` | Ver contactos aprobados |
+|---|---|
+| `/start` | Bienvenida |
+| `/ayuda` | Todos los comandos |
+| `/listar [categoria]` | Ver contactos (paginado + filtro) |
 | `/buscar texto` | Buscar por nombre/teléfono/CI |
-| `/agregar N, A, T` | Registrar nuevo contacto |
-| `/miscontactos` | Mis contactos registrados |
-| `/categorias` | Ver categorías disponibles |
+| `/agregar` | Registrar contacto (interactivo) |
+| `/miscontactos` | Mis registros |
+| `/categorias` | Ver categorías |
+| `/reportar` | Reportar contacto (interactivo) |
+| `/avalar telefono` | Avalar contacto legítimo |
+| `/reclamar telefono msg` | Derecho a réplica |
+| `/verificarme telefono` | Verificar mi contacto (badge ✅) |
+| `/listanegra` | Contactos reportados |
+| `/cancelar_registro tel` | Cancelar mi pendiente |
 
 ### Admin
 | Comando | Descripción |
-|---------|-------------|
-| `/pendientes` | Contactos por aprobar |
-| `/aprobar id` | Aprobar contacto |
-| `/rechazar id motivo` | Rechazar contacto |
-| `/estadisticas` | Ver estadísticas |
+|---|---|
+| `/pendientes [filtro]` | Contactos por aprobar (botones) |
+| `/aprobar tel` | Aprobar |
+| `/rechazar tel motivo` | Rechazar |
+| `/editar tel, campo, valor` | Editar contacto |
+| `/eliminar tel` | Eliminar (con confirmación) |
+| `/estadisticas` | Estadísticas |
+| `/exportar csv\|json` | Exportar BD |
+| `/reportes` | Ver reportes pendientes |
+| `/desestimar id` | Desestimar reporte |
+| `/reclamos` | Ver reclamos pendientes |
+| `/verificar tel` | Verificar contacto manualmente |
+| `/banear_reportador id` | Banear abusador |
+| `/desbanear id` | Desbanear |
+
+### Owner
+| Comando | Descripción |
+|---|---|
+| `/registrar_admin email pass nombre` | Crear admin |
+| `/listar_admins` | Ver admins |
+| `/eliminar_admin email` | Desactivar admin |
+| `/config` | Ver configuración (botones) |
+| `/setconfig clave valor` | Cambiar configuración |
+
+## 🛠️ Stack
+
+- Python 3.11 + python-telegram-bot 21.3
+- Supabase (service_role key)
+- Flask (health check)
+- Render.com (free tier)
+- UptimeRobot (keep-alive)
 
 ## 🚀 Deploy
 
@@ -42,29 +64,21 @@ Bot de Telegram para la Guía Telefónica Colaborativa. Permite buscar, consulta
 TELEGRAM_BOT_TOKEN=xxx
 TELEGRAM_ADMIN_CHAT_ID=xxx
 SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxx
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
 PORT=10000
-HEALTH_PORT=8080
 ```
 
-### Deploy a Render
-1. Conectar este repo en Render.com
-2. Seleccionar "Web Service" → Docker
-3. Configurar variables de entorno
-4. Deploy automático en cada push
-
-## 📁 Estructura
+### Estructura
 ```
-├── main.py              # Punto de entrada
-├── bot.py               # Lógica del bot (comandos)
-├── supabase_service.py  # Operaciones con BD
-├── health_server.py     # Flask para UptimeRobot
-├── requirements.txt     # Dependencias
-├── Dockerfile           # Build para Render
-├── render.yaml          # Config de deploy
-└── .env.example         # Variables necesarias
+├── main.py              # Entry: Flask + bot polling
+├── bot.py               # Comandos + callbacks
+├── conversations.py     # Flujos interactivos
+├── supabase_service.py  # Operaciones BD
+├── requirements.txt
+├── Dockerfile
+└── render.yaml
 ```
 
 ## 📄 Licencia
 
-MIT
+MIT — [Yoandry Freire](https://github.com/YoandryF) / ROOT Ecosystem
