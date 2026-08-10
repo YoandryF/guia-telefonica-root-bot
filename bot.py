@@ -104,7 +104,7 @@ def paginar_contactos(contactos: list, pagina: int, por_pagina: int = 10) -> tup
 # ============================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mensaje de bienvenida"""
+    """Mensaje de bienvenida + verificación deep link"""
     # Registrar usuario
     user = update.effective_user
     db.registrar_usuario_telegram(
@@ -113,6 +113,36 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         primer_nombre=user.first_name,
         ultimo_nombre=user.last_name,
     )
+
+    # Verificación desde la app (deep link: /start verify_CODIGO)
+    if context.args and len(context.args) > 0 and context.args[0].startswith("verify_"):
+        codigo = context.args[0].replace("verify_", "").upper()
+        try:
+            result = db.client.rpc("verificar_codigo_telegram", {
+                "p_codigo": codigo,
+                "p_telegram_user_id": user.id,
+                "p_telegram_username": user.username,
+            }).execute()
+            status = result.data if result.data else "ERROR"
+            if status == "OK":
+                await update.message.reply_text(
+                    "✅ *¡Verificación exitosa!*\n\n"
+                    "Ya puedes volver a la app. Tu cuenta de Telegram está vinculada.\n"
+                    "Ahora puedes reportar, avalar y reclamar contactos.",
+                    parse_mode="Markdown",
+                )
+            elif status == "CODIGO_INVALIDO":
+                await update.message.reply_text(
+                    "❌ Código inválido o expirado.\n"
+                    "Vuelve a la app y genera un nuevo código.",
+                    parse_mode="Markdown",
+                )
+            else:
+                await update.message.reply_text(f"⚠️ Error: {status}")
+        except Exception as e:
+            logger.error(f"Error verificación: {e}")
+            await update.message.reply_text("❌ Error procesando verificación. Intenta de nuevo.")
+        return
 
     mensaje = (
         "👋 *¡Bienvenido a la Guía Telefónica!*\n\n"
