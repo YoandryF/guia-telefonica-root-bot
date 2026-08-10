@@ -47,7 +47,6 @@ class SupabaseService:
                 .order("nombre")
                 .execute()
             )
-            # Aplanar categoría
             contactos = []
             for c in response.data:
                 if c.get("categorias"):
@@ -61,7 +60,7 @@ class SupabaseService:
             return []
 
     def buscar_contactos(self, query: str) -> list:
-        """Buscar contactos aprobados por nombre/teléfono/CI"""
+        """Buscar contactos aprobados por nombre/teléfono/CI/provincia/municipio"""
         if not self._check_client():
             return []
 
@@ -75,7 +74,9 @@ class SupabaseService:
                     f"nombre.ilike.%{query}%,"
                     f"apellido.ilike.%{query}%,"
                     f"telefono.ilike.%{query}%,"
-                    f"ci.ilike.%{query}%"
+                    f"ci.ilike.%{query}%,"
+                    f"provincia.ilike.%{query}%,"
+                    f"municipio.ilike.%{query}%"
                 )
                 .order("nombre")
                 .execute()
@@ -94,6 +95,7 @@ class SupabaseService:
 
     def registrar_contacto(self, nombre: str, apellido: str, telefono: str,
                            direccion: str = None, ci: str = None,
+                           provincia: str = None, municipio: str = None,
                            creado_por: str = None, creado_desde: str = "telegram") -> dict:
         """Registrar nuevo contacto (estado pendiente)"""
         if not self._check_client():
@@ -112,6 +114,10 @@ class SupabaseService:
                 data["direccion"] = direccion
             if ci:
                 data["ci"] = ci
+            if provincia:
+                data["provincia"] = provincia
+            if municipio:
+                data["municipio"] = municipio
 
             response = self.client.table("contactos").insert(data).execute()
             return {"data": response.data[0] if response.data else None}
@@ -144,10 +150,8 @@ class SupabaseService:
             return None
 
         try:
-            # Normalizar: solo dígitos
             tel_limpio = ''.join(c for c in telefono if c.isdigit())
 
-            # Intentar búsqueda directa
             response = (
                 self.client.table("contactos")
                 .select("*")
@@ -159,7 +163,6 @@ class SupabaseService:
             if response.data:
                 return response.data[0]
 
-            # Si no encuentra, buscar con solo dígitos
             if tel_limpio != telefono:
                 response = (
                     self.client.table("contactos")
@@ -172,7 +175,6 @@ class SupabaseService:
                 if response.data:
                     return response.data[0]
 
-            # Intentar con los últimos 8 dígitos (sin código país)
             if len(tel_limpio) > 8:
                 ultimos8 = tel_limpio[-8:]
                 response = (
@@ -197,9 +199,7 @@ class SupabaseService:
             return None
 
         try:
-            # Si tiene letras, probablemente es un ID (UUID parcial)
             if any(c.isalpha() for c in identificador):
-                # Traer todos y filtrar en Python por ID parcial
                 response = (
                     self.client.table("contactos")
                     .select("*")
@@ -211,7 +211,6 @@ class SupabaseService:
                         return c
                 return None
             else:
-                # Es un número, buscar por teléfono
                 return self.buscar_por_telefono(identificador)
         except Exception as e:
             logger.error(f"Error buscando contacto: {e}")
@@ -242,7 +241,6 @@ class SupabaseService:
             return {"error": "BD no disponible"}
 
         try:
-            # Buscar por ID parcial
             response = (
                 self.client.table("contactos")
                 .select("*")
@@ -251,7 +249,6 @@ class SupabaseService:
                 .execute()
             )
 
-            # Si no, buscar por teléfono
             if not response.data:
                 response = (
                     self.client.table("contactos")
@@ -267,7 +264,6 @@ class SupabaseService:
             contacto = response.data[0]
             full_id = contacto["id"]
 
-            # Actualizar estado
             update_response = (
                 self.client.table("contactos")
                 .update({
@@ -280,7 +276,6 @@ class SupabaseService:
                 .execute()
             )
 
-            # Registrar en historial
             self._registrar_historial(full_id, "aprobado", realizado_por=aprobado_por)
 
             return {"data": update_response.data[0] if update_response.data else contacto}
@@ -294,7 +289,6 @@ class SupabaseService:
             return {"error": "BD no disponible"}
 
         try:
-            # Buscar por ID parcial
             response = (
                 self.client.table("contactos")
                 .select("*")
@@ -303,7 +297,6 @@ class SupabaseService:
                 .execute()
             )
 
-            # Si no, buscar por teléfono
             if not response.data:
                 response = (
                     self.client.table("contactos")
@@ -319,7 +312,6 @@ class SupabaseService:
             contacto = response.data[0]
             full_id = contacto["id"]
 
-            # Actualizar estado
             update_response = (
                 self.client.table("contactos")
                 .update({
@@ -331,7 +323,6 @@ class SupabaseService:
                 .execute()
             )
 
-            # Registrar en historial
             self._registrar_historial(full_id, "rechazado", realizado_por="admin")
 
             return {"data": update_response.data[0] if update_response.data else contacto}
@@ -518,7 +509,6 @@ class SupabaseService:
             return {"error": "BD no disponible"}
 
         try:
-            # Crear usuario en Supabase Auth
             auth_response = self.client.auth.admin.create_user({
                 "email": email,
                 "password": password,
@@ -527,7 +517,6 @@ class SupabaseService:
 
             user_id = auth_response.user.id
 
-            # Registrar en tabla admins
             self.client.table("admins").insert({
                 "user_id": user_id,
                 "email": email,
@@ -572,3 +561,29 @@ class SupabaseService:
         except Exception as e:
             logger.error(f"Error desactivando admin: {e}")
             return {"error": str(e)}
+
+    # ============================================
+    # HELPERS FORMATO
+    # ============================================
+
+    @staticmethod
+    def formato_contacto(c: dict) -> str:
+        """Formato bonito de un contacto para display en Telegram"""
+        lineas = [
+            f"👤 *{c.get('nombre', '')} {c.get('apellido', '')}*",
+            f"📱 `{c.get('telefono', '')}`",
+        ]
+        if c.get('provincia') or c.get('municipio'):
+            ubicacion = []
+            if c.get('municipio'):
+                ubicacion.append(c['municipio'])
+            if c.get('provincia'):
+                ubicacion.append(c['provincia'])
+            lineas.append(f"📍 {', '.join(ubicacion)}")
+        if c.get('direccion'):
+            lineas.append(f"🏠 {c['direccion']}")
+        if c.get('ci'):
+            lineas.append(f"🆔 {c['ci']}")
+        if c.get('categoria_nombre'):
+            lineas.append(f"📂 {c['categoria_nombre']}")
+        return "\n".join(lineas)
