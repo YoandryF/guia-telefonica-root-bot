@@ -99,6 +99,70 @@ def paginar_contactos(contactos: list, pagina: int, por_pagina: int = 10) -> tup
     return contactos[inicio:fin], pagina, total_paginas
 
 
+def _formato_lista_compacta(contactos: list, inicio_num: int, total: int, pagina: int, total_pags: int, query_texto: str = "") -> tuple[str, InlineKeyboardMarkup]:
+    """Genera el mensaje de lista numerada compacta + botones de paginación."""
+    lineas = []
+    for i, c in enumerate(contactos):
+        num = inicio_num + i
+        nombre = f"{c['nombre']} {c['apellido']}"
+        # Truncar nombre a 20 chars
+        if len(nombre) > 20:
+            nombre = nombre[:18] + "…"
+        tel = c['telefono']
+        dir_ = c.get('direccion', '')
+        if dir_ and len(dir_) > 25:
+            dir_ = dir_[:23] + "…"
+        linea = f"*{num}.* {nombre.upper()}\n"
+        linea += f"   📱 `{tel}`\n"
+        if dir_:
+            linea += f"   🏠 {dir_}\n"
+        lineas.append(linea)
+
+    texto = "".join(lineas)
+    texto += f"\n📊 Mostrando {inicio_num}-{inicio_num + len(contactos) - 1} de *{total}* resultados\n"
+    if query_texto:
+        texto += f"\n_Para ver detalles, escribe el número de teléfono_"
+    else:
+        texto += f"\n_Escribe el número para ver detalles o usa los botones_"
+
+    # Botones de paginación
+    botones = []
+    fila = []
+    if pagina > 1:
+        prefijo = f"pg_{query_texto}_" if query_texto else "pg__"
+        fila.append(InlineKeyboardButton("⬅️ Anterior", callback_data=f"{prefijo}{pagina - 1}"))
+    if pagina < total_pags:
+        prefijo = f"pg_{query_texto}_" if query_texto else "pg__"
+        fila.append(InlineKeyboardButton("Siguiente ➡️", callback_data=f"{prefijo}{pagina + 1}"))
+    if fila:
+        botones.append(fila)
+
+    return texto, InlineKeyboardMarkup(botones)
+
+
+# Cache simple de resultados de búsqueda por chat_id
+_cache_resultados: dict = {}
+
+
+async def _mostrar_lista(update_or_query, context, contactos: list, pagina: int, query_texto: str = "", editar: bool = False):
+    """Mostrar lista paginada. Puede enviar nuevo mensaje o editar existente."""
+    por_pagina = 10
+    total = len(contactos)
+    total_pags = max(1, (total + por_pagina - 1) // por_pagina)
+    pagina = max(1, min(pagina, total_pags))
+    inicio = (pagina - 1) * por_pagina
+    items = contactos[inicio:inicio + por_pagina]
+    inicio_num = inicio + 1
+
+    texto, markup = _formato_lista_compacta(items, inicio_num, total, pagina, total_pags, query_texto)
+
+    if editar:
+        await update_or_query.edit_message_text(texto, parse_mode="Markdown", reply_markup=markup)
+    else:
+        msg = update_or_query.message if hasattr(update_or_query, 'message') else update_or_query
+        await msg.reply_text(texto, parse_mode="Markdown", reply_markup=markup)
+
+
 # ============================================
 # COMANDOS PÚBLICOS
 # ============================================
@@ -146,28 +210,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     mensaje = (
         "👋 *¡Bienvenido a la Guía Telefónica!*\n\n"
-        "📋 Soy un bot colaborativo para buscar y registrar contactos.\n\n"
-        "*Comandos disponibles:*\n"
-        "/listar - Ver contactos aprobados\n"
-        "/buscar `texto` - Buscar por nombre/teléfono/CI\n"
-        "/agregar - Registrar nuevo contacto\n"
-        "/miscontactos - Mis contactos registrados\n"
-        "/categorias - Ver categorías\n"
-        "/reportar - Reportar un contacto\n"
-        "/ayuda - Todos los comandos\n"
+        "📱 Busca contactos, registra nuevos y ayuda a mantener la base de datos colaborativa.\n\n"
+        "_Escribe un nombre o teléfono para buscar directamente, o usa los botones:_"
     )
 
-    if es_admin(user.id):
-        mensaje += (
-            "\n🔐 *Comandos de Admin:*\n"
-            "/pendientes - Contactos por aprobar\n"
-            "/aprobar `id` - Aprobar contacto\n"
-            "/rechazar `id` `motivo` - Rechazar contacto\n"
-            "/estadisticas - Ver estadísticas\n"
-            "/exportar `formato` - Exportar BD\n"
-        )
+    keyboard = [
+        [
+            InlineKeyboardButton("🔍 Buscar", switch_inline_query_current_chat=""),
+            InlineKeyboardButton("📋 Ver lista", callback_data="cmd_listar"),
+        ],
+        [
+            InlineKeyboardButton("➕ Agregar contacto", callback_data="cmd_agregar"),
+            InlineKeyboardButton("📂 Categorías", callback_data="cmd_categorias"),
+        ],
+        [
+            InlineKeyboardButton("📌 Mis contactos", callback_data="cmd_miscontactos"),
+            InlineKeyboardButton("❓ Ayuda", callback_data="cmd_ayuda"),
+        ],
+    ]
 
-    await update.message.reply_text(mensaje, parse_mode="Markdown")
+    if es_admin(user.id):
+        keyboard.append([
+            InlineKeyboardButton("🔐 Admin: Pendientes", callback_data="cmd_pendientes"),
+            InlineKeyboardButton("🚨 Reportes", callback_data="cmd_reportes"),
+        ])
+
+    await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -212,7 +280,8 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Listar contactos aprobados (paginado, con filtro por categoría)"""
+    """Listar contactos aprobados con paginación inline"""
+    await update.message.chat.send_action("typing")
     pagina = 1
     categoria_filtro = None
 
@@ -226,59 +295,40 @@ async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     contactos = db.get_contactos_aprobados()
 
     if categoria_filtro:
-        contactos = [c for c in contactos if c.get('categoria_nombre', '').lower().find(categoria_filtro) >= 0]
+        contactos = [c for c in contactos if categoria_filtro in c.get('categoria_nombre', '').lower()]
 
     if not contactos:
-        msg = "📭 No hay contactos"
-        if categoria_filtro:
-            msg += f" en la categoría '{categoria_filtro}'"
-        await update.message.reply_text(msg)
+        await update.message.reply_text("📭 No hay contactos aprobados aún.")
         return
 
-    items, pag_actual, total_pags = paginar_contactos(contactos, pagina)
+    chat_id = str(update.effective_user.id)
+    _cache_resultados[chat_id] = {'contactos': contactos, 'query': ''}
 
-    texto = f"📋 *Contactos aprobados* (pág {pag_actual}/{total_pags})\n\n"
-    for c in items:
-        texto += formatear_contacto(c, mostrar_id=es_admin(update.effective_user.id)) + "\n"
-
-    texto += f"\n📊 Total: {len(contactos)} contactos"
-    if total_pags > 1:
-        texto += f"\n📄 Usa `/listar {pag_actual + 1}` para la siguiente página"
-
-    await update.message.reply_text(texto, parse_mode="Markdown")
+    await _mostrar_lista(update, context, contactos, pagina, query_texto='')
 
 
 async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Buscar contactos por nombre/teléfono/CI"""
+    """Buscar contactos con lista compacta paginada"""
     if not context.args:
         await update.message.reply_text(
-            "🔍 Usa: `/buscar texto`\nEjemplo: `/buscar Juan`",
+            "🔍 Escribe el nombre, teléfono o CI a buscar:\n"
+            "Ejemplo: `/buscar Juan` o simplemente escribe el texto",
             parse_mode="Markdown",
         )
         return
 
+    await update.message.chat.send_action("typing")
     query = " ".join(context.args)
     contactos = db.buscar_contactos(query)
 
     if not contactos:
-        await update.message.reply_text(f"🔍 No se encontraron resultados para: *{query}*", parse_mode="Markdown")
+        await update.message.reply_text(f"🔍 Sin resultados para: *{query}*\n\nIntenta con otro término.", parse_mode="Markdown")
         return
 
-    admin = es_admin(update.effective_user.id)
-    await update.message.reply_text(f"🔍 *{len(contactos[:10])} resultado(s) para:* `{query}`", parse_mode="Markdown")
+    chat_id = str(update.effective_user.id)
+    _cache_resultados[chat_id] = {'contactos': contactos, 'query': query}
 
-    for c in contactos[:10]:
-        texto = formatear_contacto(c, mostrar_id=admin)
-        if admin:
-            keyboard = [[
-                InlineKeyboardButton("🗑 Eliminar", callback_data=f"confirmar_del_{c['id'][:8]}"),
-            ]]
-            await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-        else:
-            await update.message.reply_text(texto, parse_mode="Markdown")
-
-    if len(contactos) > 10:
-        await update.message.reply_text(f"... y {len(contactos) - 10} más. Refina tu búsqueda.")
+    await _mostrar_lista(update, context, contactos, 1, query_texto=query)
 
 
 async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -370,18 +420,30 @@ async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def miscontactos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver contactos registrados por este usuario"""
+    """Ver contactos registrados por este usuario con estado y detalle"""
+    await update.message.chat.send_action("typing")
     chat_id = str(update.effective_user.id)
     contactos = db.get_contactos_por_creador(chat_id)
 
     if not contactos:
-        await update.message.reply_text("📭 No has registrado contactos aún.")
+        await update.message.reply_text(
+            "📭 No has registrado contactos aún.\n\n"
+            "Usa /agregar para registrar uno.",
+        )
         return
 
-    texto = "📋 *Mis contactos registrados:*\n\n"
+    texto = f"📌 *Tus contactos registrados ({len(contactos)}):*\n\n"
     for c in contactos:
-        estado_emoji = {"aprobado": "✅", "pendiente": "⏳", "rechazado": "❌"}.get(c["estado"], "❓")
-        texto += f"{estado_emoji} {c['nombre']} {c['apellido']} - {c['telefono']}\n"
+        emoji = {"aprobado": "✅", "pendiente": "⏳", "rechazado": "❌"}.get(c["estado"], "❓")
+        texto += f"{emoji} *{c['nombre']} {c['apellido']}*\n"
+        texto += f"   📱 `{c['telefono']}`\n"
+        if c.get('motivo_rechazo'):
+            texto += f"   ❌ Motivo: _{c['motivo_rechazo']}_\n"
+        texto += "\n"
+
+    pendientes = sum(1 for c in contactos if c["estado"] == "pendiente")
+    if pendientes:
+        texto += f"_⏳ {pendientes} pendiente(s) de aprobación_"
 
     await update.message.reply_text(texto, parse_mode="Markdown")
 
@@ -537,6 +599,89 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "pend_next":
         context.user_data['pend_pagina'] = context.user_data.get('pend_pagina', 0) + 1
         await query.edit_message_text(f"➡️ Usa /pendientes para ver página {context.user_data['pend_pagina']+1}")
+
+    # ── Paginación lista/búsqueda (pg_QUERY_PAGINA) ──
+    elif data.startswith("pg_"):
+        partes = data.split("_", 2)
+        q = partes[1] if len(partes) > 1 else ""
+        pagina = int(partes[2]) if len(partes) > 2 and partes[2].isdigit() else 1
+        chat_id = str(query.from_user.id)
+        cache = _cache_resultados.get(chat_id)
+        if not cache:
+            await query.answer("⚠️ Sesión expirada. Busca de nuevo.", show_alert=True)
+            return
+        await query.answer()
+        await _mostrar_lista(query, context, cache['contactos'], pagina, query_texto=cache.get('query', ''), editar=True)
+
+    # ── Botones rápidos del /start ──
+    elif data == "cmd_listar":
+        await query.answer()
+        contactos = db.get_contactos_aprobados()
+        if not contactos:
+            await query.edit_message_text("📭 No hay contactos aprobados aún.")
+            return
+        chat_id = str(query.from_user.id)
+        _cache_resultados[chat_id] = {'contactos': contactos, 'query': ''}
+        total = len(contactos)
+        total_pags = max(1, (total + 9) // 10)
+        texto, markup = _formato_lista_compacta(contactos[:10], 1, total, 1, total_pags, '')
+        await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=markup)
+
+    elif data == "cmd_agregar":
+        await query.answer()
+        await query.edit_message_text(
+            "✏️ Para registrar un contacto usa:\n\n"
+            "`/agregar Nombre, Apellido, Teléfono`\n\n"
+            "Ejemplo: `/agregar Juan, Pérez, 55551234`",
+            parse_mode="Markdown",
+        )
+
+    elif data == "cmd_categorias":
+        await query.answer()
+        cats = db.get_categorias()
+        if not cats:
+            await query.edit_message_text("📂 No hay categorías configuradas.")
+            return
+        texto = "📂 *Categorías disponibles:*\n\n"
+        for cat in cats:
+            texto += f"  {cat.get('icono', '📋')} {cat['nombre']}\n"
+        await query.edit_message_text(texto, parse_mode="Markdown")
+
+    elif data == "cmd_miscontactos":
+        await query.answer()
+        chat_id = str(query.from_user.id)
+        contactos = db.get_contactos_por_creador(chat_id)
+        if not contactos:
+            await query.edit_message_text("📭 No has registrado contactos aún.\n\nUsa /agregar para registrar uno.")
+            return
+        texto = f"📌 *Tus contactos ({len(contactos)}):*\n\n"
+        for c in contactos:
+            emoji = {"aprobado": "✅", "pendiente": "⏳", "rechazado": "❌"}.get(c["estado"], "❓")
+            texto += f"{emoji} *{c['nombre']} {c['apellido']}* — `{c['telefono']}`\n"
+        await query.edit_message_text(texto, parse_mode="Markdown")
+
+    elif data == "cmd_ayuda":
+        await query.answer()
+        await query.edit_message_text(
+            "📖 *Cómo usar la Guía Telefónica:*\n\n"
+            "🔍 *Buscar:* Escribe el nombre o número directamente en el chat\n"
+            "📋 *Listar:* /listar — ver todos\n"
+            "➕ *Registrar:* /agregar\n"
+            "📌 *Mis registros:* /miscontactos\n"
+            "⚠️ *Reportar:* /reportar\n"
+            "👍 *Avalar:* /avalar\n"
+            "📂 *Categorías:* /categorias\n"
+            "🚫 *Lista negra:* /listanegra\n",
+            parse_mode="Markdown",
+        )
+
+    elif data in ("cmd_pendientes", "cmd_reportes"):
+        if not es_admin(query.from_user.id):
+            await query.answer("🔒 Solo admins", show_alert=True)
+            return
+        await query.answer()
+        cmd = "pendientes" if data == "cmd_pendientes" else "reportes"
+        await query.edit_message_text(f"Usa /{cmd} para ver la lista.")
 
 
 
@@ -755,8 +900,50 @@ async def handle_texto_admin(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 
+async def handle_texto_libre(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Texto libre para TODOS los usuarios — busca número o nombre directamente"""
+    texto = update.message.text.strip()
+
+    # Si parece número de teléfono → mostrar detalle
+    limpio = texto.replace('-', '').replace(' ', '').replace('+', '')
+    if limpio.isdigit() and len(limpio) >= 5:
+        await update.message.chat.send_action("typing")
+        contacto = db.buscar_por_id_o_telefono(texto)
+        if contacto:
+            admin = es_admin(update.effective_user.id)
+            detalle = formatear_contacto(contacto, mostrar_id=admin)
+            if admin:
+                keyboard = [[InlineKeyboardButton("🗑 Eliminar", callback_data=f"confirmar_del_{contacto['id'][:8]}")]]
+                await update.message.reply_text(detalle, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            else:
+                await update.message.reply_text(detalle, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(
+                f"❌ No encontré ningún contacto con `{texto}`\n\n"
+                f"_¿Quieres registrarlo? Usa /agregar_",
+                parse_mode="Markdown",
+            )
+        return
+
+    # Si tiene 3+ chars → buscar como nombre
+    if len(texto) >= 3:
+        await update.message.chat.send_action("typing")
+        contactos = db.buscar_contactos(texto)
+        if contactos:
+            chat_id = str(update.effective_user.id)
+            _cache_resultados[chat_id] = {'contactos': contactos, 'query': texto}
+            await _mostrar_lista(update, context, contactos, 1, query_texto=texto)
+        else:
+            await update.message.reply_text(
+                f"🔍 Sin resultados para *{texto}*\n\n"
+                f"Intenta con otro término o usa /listar para ver todos.",
+                parse_mode="Markdown",
+            )
+
+
 async def listanegra(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mostrar contactos reportados (lista negra) con botones para admin"""
+    """Lista negra compacta — contactos reportados"""
+    await update.message.chat.send_action("typing")
     contactos = db.get_contactos_aprobados()
     reportados = []
     for c in contactos:
@@ -765,25 +952,24 @@ async def listanegra(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reportados.append((c, info))
 
     if not reportados:
-        await update.message.reply_text("\u2705 No hay contactos en la lista negra.")
+        await update.message.reply_text("✅ No hay contactos en la lista negra.")
         return
 
     admin = es_admin(update.effective_user.id)
-    await update.message.reply_text(f"\u26a0\ufe0f *Lista Negra ({len(reportados)} contactos):*", parse_mode="Markdown")
+    texto = f"⚠️ *Lista Negra — {len(reportados)} contactos*\n\n"
 
-    for c, info in reportados[:10]:
+    for i, (c, info) in enumerate(reportados[:20], 1):
         nombre = f"{c['nombre']} {c['apellido']}"
-        estado = "\U0001f534 Verificado" if info['verificado'] else f"\U0001f7e1 {info['pendientes']} reportes"
-        texto = f"\u2022 *{nombre}*\n   \U0001f4f1 `{c['telefono']}`\n   {estado}"
+        if len(nombre) > 22: nombre = nombre[:20] + "…"
+        estado = "🔴 Verificado" if info['verificado'] else f"🟡 {info['pendientes']} reportes"
+        texto += f"*{i}.* {nombre.upper()}\n   📱 `{c['telefono']}` — {estado}\n\n"
 
-        if admin:
-            keyboard = [[InlineKeyboardButton("\U0001f5d1 Eliminar", callback_data=f"confirmar_del_{c['id'][:8]}")]]
-            await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-        else:
-            await update.message.reply_text(texto, parse_mode="Markdown")
+    if len(reportados) > 20:
+        texto += f"_... y {len(reportados) - 20} más_"
 
-    if len(reportados) > 10:
-        await update.message.reply_text(f"... y {len(reportados) - 10} m\u00e1s")
+    texto += "_Escribe el número para ver detalles_"
+
+    await update.message.reply_text(texto, parse_mode="Markdown")
 
 
 # ============================================
@@ -1398,8 +1584,10 @@ def create_app():
     # Callback de botones inline
     app.add_handler(CallbackQueryHandler(callback_handler))
 
-    # Handler para texto libre (motivo de rechazo)
+    # Handler para texto libre del admin (motivo de rechazo, edición config)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.User(int(ADMIN_CHAT_ID)), handle_texto_admin))
+    # Handler para texto libre de TODOS los usuarios (búsqueda directa)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_texto_libre))
     app.add_handler(CommandHandler("aprobar", aprobar))
     app.add_handler(CommandHandler("rechazar", rechazar))
     app.add_handler(CommandHandler("estadisticas", estadisticas))
