@@ -209,9 +209,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     mensaje = (
-        "👋 *¡Bienvenido a la Guía Telefónica!*\n\n"
-        "📱 Busca contactos, registra nuevos y ayuda a mantener la base de datos colaborativa.\n\n"
-        "_Escribe un nombre o teléfono para buscar directamente, o usa los botones:_"
+        "👋 *Bienvenido a la Guía Telefónica ROOT*\n\n"
+        "Puedes buscar escribiendo directamente en el chat:\n\n"
+        "┌ 📱 Número de teléfono _\(ej: 55551234\)_\n"
+        "├ 👤 Nombre o apellido _\(ej: Juan Pérez\)_\n"
+        "└ 🆔 Carné de identidad _\(ej: 85010112345\)_\n\n"
+        "✅ Los contactos verificados tienen badge verde\n"
+        "⚠️ Los contactos reportados se marcan visiblemente\n\n"
+        "📲 *También disponible como app Android:*\n"
+        "[⬇️ Descargar APK](https://github.com/YoandryF/guia-telefonica-root-app/releases/latest)\n\n"
+        "_Base de datos colaborativa — tu aporte importa_ 🤝"
     )
 
     keyboard = [
@@ -231,11 +238,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if es_admin(user.id):
         keyboard.append([
-            InlineKeyboardButton("🔐 Admin: Pendientes", callback_data="cmd_pendientes"),
+            InlineKeyboardButton("🔐 Pendientes", callback_data="cmd_pendientes"),
             InlineKeyboardButton("🚨 Reportes", callback_data="cmd_reportes"),
         ])
 
-    await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(mensaje, parse_mode="MarkdownV2", reply_markup=InlineKeyboardMarkup(keyboard), disable_web_page_preview=True)
 
 
 async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
