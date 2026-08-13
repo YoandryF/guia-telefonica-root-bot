@@ -537,11 +537,114 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if not es_admin(query.from_user.id):
-        await query.edit_message_text("🔒 Solo el administrador.")
+    data = query.data
+    admin = es_admin(query.from_user.id)
+
+    # Callbacks PÚBLICOS (sin guard de admin)
+    if data.startswith("pg_"):
+        partes = data.split("_", 2)
+        q = partes[1] if len(partes) > 1 else ""
+        pagina = int(partes[2]) if len(partes) > 2 and partes[2].isdigit() else 1
+        chat_id = str(query.from_user.id)
+        cache = _cache_resultados.get(chat_id)
+        if not cache:
+            await query.answer("⚠️ Sesión expirada. Busca de nuevo.", show_alert=True)
+            return
+        await _mostrar_lista(query, context, cache['contactos'], pagina, query_texto=cache.get('query', ''), editar=True)
         return
 
-    data = query.data
+    elif data == "cmd_listar":
+        contactos = db.get_contactos_aprobados()
+        if not contactos:
+            await query.edit_message_text("📭 No hay contactos aprobados aún.")
+            return
+        chat_id = str(query.from_user.id)
+        _cache_resultados[chat_id] = {'contactos': contactos, 'query': ''}
+        total = len(contactos)
+        total_pags = max(1, (total + 9) // 10)
+        texto, markup = _formato_lista_compacta(contactos[:10], 1, total, 1, total_pags, '')
+        await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=markup)
+        return
+
+    elif data == "cmd_agregar":
+        await query.edit_message_text(
+            "✏️ Para registrar un contacto usa:\n\n"
+            "`/agregar Nombre, Apellido, Teléfono`\n\n"
+            "Ejemplo: `/agregar Juan, Pérez, 55551234`",
+            parse_mode="Markdown",
+        )
+        return
+
+    elif data == "cmd_categorias":
+        cats = db.get_categorias()
+        if not cats:
+            await query.edit_message_text("📂 No hay categorías configuradas.")
+            return
+        texto = "📂 *Categorías disponibles:*\n\n"
+        for cat in cats:
+            texto += f"  {cat.get('icono', '📋')} {cat['nombre']}\n"
+        await query.edit_message_text(texto, parse_mode="Markdown")
+        return
+
+    elif data == "cmd_miscontactos":
+        chat_id = str(query.from_user.id)
+        contactos = db.get_contactos_por_creador(chat_id)
+        if not contactos:
+            await query.edit_message_text("📭 No has registrado contactos aún.\n\nUsa /agregar para registrar uno.")
+            return
+        texto = f"📌 *Tus contactos ({len(contactos)}):*\n\n"
+        for c in contactos:
+            emoji = {"aprobado": "✅", "pendiente": "⏳", "rechazado": "❌"}.get(c["estado"], "❓")
+            texto += f"{emoji} *{c['nombre']} {c['apellido']}* — `{c['telefono']}`\n"
+        await query.edit_message_text(texto, parse_mode="Markdown")
+        return
+
+    elif data == "cmd_ayuda":
+        await query.edit_message_text(
+            "📖 *Cómo usar la Guía Telefónica:*\n\n"
+            "🔍 Escribe el nombre o número directamente\n"
+            "📋 /listar — ver todos\n"
+            "➕ /agregar — registrar contacto\n"
+            "📌 /miscontactos — mis registros\n"
+            "⚠️ /reportar — reportar número\n"
+            "👍 /avalar — avalar contacto\n"
+            "📂 /categorias — ver categorías\n"
+            "🚫 /listanegra — contactos reportados\n",
+            parse_mode="Markdown",
+        )
+        return
+
+    elif data in ("cmd_pendientes", "cmd_reportes"):
+        if not admin:
+            await query.answer("🔒 Solo admins", show_alert=True)
+            return
+        cmd = "pendientes" if data == "cmd_pendientes" else "reportes"
+        await query.edit_message_text(f"Usa /{cmd} para ver la lista.")
+        return
+
+    elif data == "cancelar":
+        await query.edit_message_text("❌ Operación cancelada.")
+        return
+
+    elif data.startswith("reclamo_"):
+        if not admin:
+            await query.edit_message_text("🔒 Solo el administrador.")
+            return
+        partes = data.split("_")
+        accion = partes[1]  # aceptar o rechazar
+        reclamo_id = partes[2]
+        try:
+            estado = "aceptado" if accion == "aceptar" else "rechazado"
+            db.client.table("reclamos").update({"estado": estado}).ilike("id", f"{reclamo_id}%").execute()
+            await query.edit_message_text(f"{'✅ Reclamo aceptado' if accion == 'aceptar' else '❌ Reclamo rechazado'}")
+        except Exception as e:
+            await query.edit_message_text(f"❌ Error: {e}")
+        return
+
+    # A partir de aquí: solo admins
+    if not admin:
+        await query.edit_message_text("🔒 Solo el administrador.")
+        return
 
     if data.startswith("aprobar_"):
         contacto_id = data.replace("aprobar_", "")
@@ -599,90 +702,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "pend_next":
         context.user_data['pend_pagina'] = context.user_data.get('pend_pagina', 0) + 1
         await query.edit_message_text(f"➡️ Usa /pendientes para ver página {context.user_data['pend_pagina']+1}")
-
-    # ── Paginación lista/búsqueda (pg_QUERY_PAGINA) ──
-    elif data.startswith("pg_"):
-        partes = data.split("_", 2)
-        q = partes[1] if len(partes) > 1 else ""
-        pagina = int(partes[2]) if len(partes) > 2 and partes[2].isdigit() else 1
-        chat_id = str(query.from_user.id)
-        cache = _cache_resultados.get(chat_id)
-        if not cache:
-            await query.answer("⚠️ Sesión expirada. Busca de nuevo.", show_alert=True)
-            return
-        await query.answer()
-        await _mostrar_lista(query, context, cache['contactos'], pagina, query_texto=cache.get('query', ''), editar=True)
-
-    # ── Botones rápidos del /start ──
-    elif data == "cmd_listar":
-        await query.answer()
-        contactos = db.get_contactos_aprobados()
-        if not contactos:
-            await query.edit_message_text("📭 No hay contactos aprobados aún.")
-            return
-        chat_id = str(query.from_user.id)
-        _cache_resultados[chat_id] = {'contactos': contactos, 'query': ''}
-        total = len(contactos)
-        total_pags = max(1, (total + 9) // 10)
-        texto, markup = _formato_lista_compacta(contactos[:10], 1, total, 1, total_pags, '')
-        await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=markup)
-
-    elif data == "cmd_agregar":
-        await query.answer()
-        await query.edit_message_text(
-            "✏️ Para registrar un contacto usa:\n\n"
-            "`/agregar Nombre, Apellido, Teléfono`\n\n"
-            "Ejemplo: `/agregar Juan, Pérez, 55551234`",
-            parse_mode="Markdown",
-        )
-
-    elif data == "cmd_categorias":
-        await query.answer()
-        cats = db.get_categorias()
-        if not cats:
-            await query.edit_message_text("📂 No hay categorías configuradas.")
-            return
-        texto = "📂 *Categorías disponibles:*\n\n"
-        for cat in cats:
-            texto += f"  {cat.get('icono', '📋')} {cat['nombre']}\n"
-        await query.edit_message_text(texto, parse_mode="Markdown")
-
-    elif data == "cmd_miscontactos":
-        await query.answer()
-        chat_id = str(query.from_user.id)
-        contactos = db.get_contactos_por_creador(chat_id)
-        if not contactos:
-            await query.edit_message_text("📭 No has registrado contactos aún.\n\nUsa /agregar para registrar uno.")
-            return
-        texto = f"📌 *Tus contactos ({len(contactos)}):*\n\n"
-        for c in contactos:
-            emoji = {"aprobado": "✅", "pendiente": "⏳", "rechazado": "❌"}.get(c["estado"], "❓")
-            texto += f"{emoji} *{c['nombre']} {c['apellido']}* — `{c['telefono']}`\n"
-        await query.edit_message_text(texto, parse_mode="Markdown")
-
-    elif data == "cmd_ayuda":
-        await query.answer()
-        await query.edit_message_text(
-            "📖 *Cómo usar la Guía Telefónica:*\n\n"
-            "🔍 *Buscar:* Escribe el nombre o número directamente en el chat\n"
-            "📋 *Listar:* /listar — ver todos\n"
-            "➕ *Registrar:* /agregar\n"
-            "📌 *Mis registros:* /miscontactos\n"
-            "⚠️ *Reportar:* /reportar\n"
-            "👍 *Avalar:* /avalar\n"
-            "📂 *Categorías:* /categorias\n"
-            "🚫 *Lista negra:* /listanegra\n",
-            parse_mode="Markdown",
-        )
-
-    elif data in ("cmd_pendientes", "cmd_reportes"):
-        if not es_admin(query.from_user.id):
-            await query.answer("🔒 Solo admins", show_alert=True)
-            return
-        await query.answer()
-        cmd = "pendientes" if data == "cmd_pendientes" else "reportes"
-        await query.edit_message_text(f"Usa /{cmd} para ver la lista.")
-
 
 
 async def aprobar(update: Update, context: ContextTypes.DEFAULT_TYPE):
