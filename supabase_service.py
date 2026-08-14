@@ -195,26 +195,23 @@ class SupabaseService:
             return None
 
     def buscar_por_id_o_telefono(self, identificador: str) -> dict:
-        """Buscar contacto por ID parcial o teléfono"""
+        """Buscar contacto por ID parcial o teléfono — sin cargar todo"""
         if not self._check_client():
             return None
 
         try:
-            # Si tiene letras, probablemente es un ID (UUID parcial)
+            # Si tiene letras → buscar por ID con LIKE en Supabase
             if any(c.isalpha() for c in identificador):
-                # Traer todos y filtrar en Python por ID parcial
                 response = (
                     self.client.table("contactos")
                     .select("*")
                     .is_("deleted_at", None)
+                    .ilike("id", f"{identificador}%")
+                    .limit(1)
                     .execute()
                 )
-                for c in response.data:
-                    if c['id'].startswith(identificador):
-                        return c
-                return None
+                return response.data[0] if response.data else None
             else:
-                # Es un número, buscar por teléfono
                 return self.buscar_por_telefono(identificador)
         except Exception as e:
             logger.error(f"Error buscando contacto: {e}")

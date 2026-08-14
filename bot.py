@@ -288,7 +288,6 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Listar contactos aprobados con paginación real desde Supabase"""
-    await update.message.chat.send_action("typing")
     pagina = 1
     if context.args:
         try:
@@ -296,30 +295,25 @@ async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             pass
 
+    msg = await update.message.reply_text("⏳ Cargando contactos...")
+    await update.message.chat.send_action("typing")
+
     por_pagina = 10
     offset = (pagina - 1) * por_pagina
-
-    # Paginación real en Supabase — no carga 25k
     contactos = db.get_contactos_aprobados(limite=por_pagina, offset=offset)
     total = db.contar_contactos_aprobados()
 
     if not contactos:
-        await update.message.reply_text("📭 No hay contactos aprobados aún.")
+        await msg.edit_text("📭 No hay contactos aprobados aún.")
         return
 
     total_pags = max(1, (total + por_pagina - 1) // por_pagina)
     inicio_num = offset + 1
-
     chat_id = str(update.effective_user.id)
-    # Guardamos metadata para la paginación inline
-    _cache_resultados[chat_id] = {
-        'tipo': 'listar',
-        'total': total,
-        'por_pagina': por_pagina,
-    }
+    _cache_resultados[chat_id] = {'tipo': 'listar', 'total': total, 'por_pagina': por_pagina}
 
     texto, markup = _formato_lista_compacta(contactos, inicio_num, total, pagina, total_pags, '')
-    await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=markup)
+    await msg.edit_text(texto, parse_mode="Markdown", reply_markup=markup)
 
 
 async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -332,18 +326,24 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    await update.message.chat.send_action("typing")
     query = " ".join(context.args)
+    # Feedback inmediato
+    msg = await update.message.reply_text(f"🔍 Buscando *{query}*...", parse_mode="Markdown")
+    await update.message.chat.send_action("typing")
+
     contactos = db.buscar_contactos(query)
 
     if not contactos:
-        await update.message.reply_text(f"🔍 Sin resultados para: *{query}*\n\nIntenta con otro término.", parse_mode="Markdown")
+        await msg.edit_text(f"❌ Sin resultados para: *{query}*\n\nIntenta con otro término.", parse_mode="Markdown")
         return
 
     chat_id = str(update.effective_user.id)
     _cache_resultados[chat_id] = {'contactos': contactos, 'query': query}
 
-    await _mostrar_lista(update, context, contactos, 1, query_texto=query)
+    total = len(contactos)
+    total_pags = max(1, (total + 9) // 10)
+    texto, markup = _formato_lista_compacta(contactos[:10], 1, total, 1, total_pags, query)
+    await msg.edit_text(texto, parse_mode="Markdown", reply_markup=markup)
 
 
 async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -436,12 +436,13 @@ async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def miscontactos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver contactos registrados por este usuario con estado y detalle"""
+    msg = await update.message.reply_text("⏳ Cargando tus contactos...")
     await update.message.chat.send_action("typing")
     chat_id = str(update.effective_user.id)
     contactos = db.get_contactos_por_creador(chat_id)
 
     if not contactos:
-        await update.message.reply_text(
+        await msg.edit_text(
             "📭 No has registrado contactos aún.\n\n"
             "Usa /agregar para registrar uno.",
         )
@@ -460,7 +461,7 @@ async def miscontactos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if pendientes:
         texto += f"_⏳ {pendientes} pendiente(s) de aprobación_"
 
-    await update.message.reply_text(texto, parse_mode="Markdown")
+    await msg.edit_text(texto, parse_mode="Markdown")
 
 
 async def categorias(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -952,6 +953,7 @@ async def handle_texto_libre(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Si parece número de teléfono → mostrar detalle
     limpio = texto.replace('-', '').replace(' ', '').replace('+', '')
     if limpio.isdigit() and len(limpio) >= 5:
+        msg = await update.message.reply_text("🔍 Buscando número...")
         await update.message.chat.send_action("typing")
         contacto = db.buscar_por_id_o_telefono(texto)
         if contacto:
@@ -959,11 +961,11 @@ async def handle_texto_libre(update: Update, context: ContextTypes.DEFAULT_TYPE)
             detalle = formatear_contacto(contacto, mostrar_id=admin)
             if admin:
                 keyboard = [[InlineKeyboardButton("🗑 Eliminar", callback_data=f"confirmar_del_{contacto['id'][:8]}")]]
-                await update.message.reply_text(detalle, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+                await msg.edit_text(detalle, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
             else:
-                await update.message.reply_text(detalle, parse_mode="Markdown")
+                await msg.edit_text(detalle, parse_mode="Markdown")
         else:
-            await update.message.reply_text(
+            await msg.edit_text(
                 f"❌ No encontré ningún contacto con `{texto}`\n\n"
                 f"_¿Quieres registrarlo? Usa /agregar_",
                 parse_mode="Markdown",
@@ -972,33 +974,35 @@ async def handle_texto_libre(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # Si tiene 3+ chars → buscar como nombre
     if len(texto) >= 3:
+        msg = await update.message.reply_text(f"🔍 Buscando *{texto}*...", parse_mode="Markdown")
         await update.message.chat.send_action("typing")
         contactos = db.buscar_contactos(texto)
         if contactos:
             chat_id = str(update.effective_user.id)
             _cache_resultados[chat_id] = {'contactos': contactos, 'query': texto}
-            await _mostrar_lista(update, context, contactos, 1, query_texto=texto)
+            total = len(contactos)
+            total_pags = max(1, (total + 9) // 10)
+            t, markup = _formato_lista_compacta(contactos[:10], 1, total, 1, total_pags, texto)
+            await msg.edit_text(t, parse_mode="Markdown", reply_markup=markup)
         else:
-            await update.message.reply_text(
-                f"🔍 Sin resultados para *{texto}*\n\n"
-                f"Intenta con otro término o usa /listar para ver todos.",
+            await msg.edit_text(
+                f"❌ Sin resultados para *{texto}*\n\nIntenta con otro término.",
                 parse_mode="Markdown",
             )
 
 
 async def listanegra(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Lista negra compacta — contactos reportados (query eficiente)"""
+    msg = await update.message.reply_text("⏳ Cargando lista negra...")
     await update.message.chat.send_action("typing")
 
-    # Una sola query — no itera 25k contactos
     reportados = db.get_contactos_con_reportes()
 
     if not reportados:
-        await update.message.reply_text("✅ No hay contactos en la lista negra.")
+        await msg.edit_text("✅ No hay contactos en la lista negra.")
         return
 
     texto = f"⚠️ *Lista Negra — {len(reportados)} contactos*\n\n"
-
     for i, c in enumerate(reportados[:20], 1):
         nombre = f"{c['nombre']} {c['apellido']}"
         if len(nombre) > 22: nombre = nombre[:20] + "…"
@@ -1008,10 +1012,9 @@ async def listanegra(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if len(reportados) > 20:
         texto += f"_... y {len(reportados) - 20} más_\n\n"
-
     texto += "_Escribe el número para ver detalles completos_"
 
-    await update.message.reply_text(texto, parse_mode="Markdown")
+    await msg.edit_text(texto, parse_mode="Markdown")
 
 
 # ============================================
