@@ -287,31 +287,39 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Listar contactos aprobados con paginación inline"""
+    """Listar contactos aprobados con paginación real desde Supabase"""
     await update.message.chat.send_action("typing")
     pagina = 1
-    categoria_filtro = None
-
     if context.args:
-        for arg in context.args:
-            try:
-                pagina = int(arg)
-            except ValueError:
-                categoria_filtro = arg.lower()
+        try:
+            pagina = int(context.args[0])
+        except ValueError:
+            pass
 
-    contactos = db.get_contactos_aprobados()
+    por_pagina = 10
+    offset = (pagina - 1) * por_pagina
 
-    if categoria_filtro:
-        contactos = [c for c in contactos if categoria_filtro in c.get('categoria_nombre', '').lower()]
+    # Paginación real en Supabase — no carga 25k
+    contactos = db.get_contactos_aprobados(limite=por_pagina, offset=offset)
+    total = db.contar_contactos_aprobados()
 
     if not contactos:
         await update.message.reply_text("📭 No hay contactos aprobados aún.")
         return
 
-    chat_id = str(update.effective_user.id)
-    _cache_resultados[chat_id] = {'contactos': contactos, 'query': ''}
+    total_pags = max(1, (total + por_pagina - 1) // por_pagina)
+    inicio_num = offset + 1
 
-    await _mostrar_lista(update, context, contactos, pagina, query_texto='')
+    chat_id = str(update.effective_user.id)
+    # Guardamos metadata para la paginación inline
+    _cache_resultados[chat_id] = {
+        'tipo': 'listar',
+        'total': total,
+        'por_pagina': por_pagina,
+    }
+
+    texto, markup = _formato_lista_compacta(contactos, inicio_num, total, pagina, total_pags, '')
+    await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=markup)
 
 
 async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -550,26 +558,37 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Callbacks PÚBLICOS (sin guard de admin)
     if data.startswith("pg_"):
         partes = data.split("_", 2)
-        q = partes[1] if len(partes) > 1 else ""
         pagina = int(partes[2]) if len(partes) > 2 and partes[2].isdigit() else 1
         chat_id = str(query.from_user.id)
         cache = _cache_resultados.get(chat_id)
-        if not cache:
+
+        if cache and cache.get('tipo') == 'listar':
+            # Paginación real desde Supabase
+            por_pagina = 10
+            total = cache.get('total', 0)
+            offset = (pagina - 1) * por_pagina
+            contactos = db.get_contactos_aprobados(limite=por_pagina, offset=offset)
+            total_pags = max(1, (total + por_pagina - 1) // por_pagina)
+            texto, markup = _formato_lista_compacta(contactos, offset + 1, total, pagina, total_pags, '')
+            await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=markup)
+        elif cache and 'contactos' in cache:
+            # Búsqueda — cache local
+            await _mostrar_lista(query, context, cache['contactos'], pagina, query_texto=cache.get('query', ''), editar=True)
+        else:
             await query.answer("⚠️ Sesión expirada. Busca de nuevo.", show_alert=True)
-            return
-        await _mostrar_lista(query, context, cache['contactos'], pagina, query_texto=cache.get('query', ''), editar=True)
         return
 
     elif data == "cmd_listar":
-        contactos = db.get_contactos_aprobados()
+        por_pagina = 10
+        total = db.contar_contactos_aprobados()
+        contactos = db.get_contactos_aprobados(limite=por_pagina, offset=0)
         if not contactos:
             await query.edit_message_text("📭 No hay contactos aprobados aún.")
             return
         chat_id = str(query.from_user.id)
-        _cache_resultados[chat_id] = {'contactos': contactos, 'query': ''}
-        total = len(contactos)
-        total_pags = max(1, (total + 9) // 10)
-        texto, markup = _formato_lista_compacta(contactos[:10], 1, total, 1, total_pags, '')
+        _cache_resultados[chat_id] = {'tipo': 'listar', 'total': total, 'por_pagina': por_pagina}
+        total_pags = max(1, (total + por_pagina - 1) // por_pagina)
+        texto, markup = _formato_lista_compacta(contactos, 1, total, 1, total_pags, '')
         await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=markup)
         return
 

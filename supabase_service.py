@@ -33,42 +33,51 @@ class SupabaseService:
     # CONTACTOS
     # ============================================
 
-    def get_contactos_aprobados(self) -> list:
-        """Obtener todos los contactos aprobados"""
+    def get_contactos_aprobados(self, limite: int = 100, offset: int = 0) -> list:
+        """Obtener contactos aprobados paginados — NUNCA cargar 25k de golpe"""
         if not self._check_client():
             return []
 
         try:
             response = (
                 self.client.table("contactos")
-                .select("*, categorias(nombre, icono)")
+                .select("id, nombre, apellido, telefono, direccion, categoria_id, tiene_reportes")
                 .eq("estado", "aprobado")
                 .is_("deleted_at", None)
                 .order("nombre")
+                .range(offset, offset + limite - 1)
                 .execute()
             )
-            # Aplanar categoría
-            contactos = []
-            for c in response.data:
-                if c.get("categorias"):
-                    c["categoria_nombre"] = f"{c['categorias']['icono']} {c['categorias']['nombre']}"
-                else:
-                    c["categoria_nombre"] = None
-                contactos.append(c)
-            return contactos
+            return response.data
         except Exception as e:
             logger.error(f"Error obteniendo contactos aprobados: {e}")
             return []
 
-    def buscar_contactos(self, query: str) -> list:
-        """Buscar contactos aprobados por nombre/teléfono/CI"""
+    def contar_contactos_aprobados(self) -> int:
+        """Contar total sin cargar todos en memoria"""
+        if not self._check_client():
+            return 0
+        try:
+            response = (
+                self.client.table("contactos")
+                .select("id", count="exact")
+                .eq("estado", "aprobado")
+                .is_("deleted_at", None)
+                .execute()
+            )
+            return response.count or 0
+        except Exception:
+            return 0
+
+    def buscar_contactos(self, query: str, limite: int = 50) -> list:
+        """Buscar contactos aprobados con límite"""
         if not self._check_client():
             return []
 
         try:
             response = (
                 self.client.table("contactos")
-                .select("*, categorias(nombre, icono)")
+                .select("id, nombre, apellido, telefono, direccion, tiene_reportes")
                 .eq("estado", "aprobado")
                 .is_("deleted_at", None)
                 .or_(
@@ -78,16 +87,10 @@ class SupabaseService:
                     f"ci.ilike.%{query}%"
                 )
                 .order("nombre")
+                .limit(limite)
                 .execute()
             )
-            contactos = []
-            for c in response.data:
-                if c.get("categorias"):
-                    c["categoria_nombre"] = f"{c['categorias']['icono']} {c['categorias']['nombre']}"
-                else:
-                    c["categoria_nombre"] = None
-                contactos.append(c)
-            return contactos
+            return response.data
         except Exception as e:
             logger.error(f"Error buscando contactos: {e}")
             return []
