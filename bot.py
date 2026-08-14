@@ -968,32 +968,29 @@ async def handle_texto_libre(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def listanegra(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Lista negra compacta — contactos reportados"""
+    """Lista negra compacta — contactos reportados (query eficiente)"""
     await update.message.chat.send_action("typing")
-    contactos = db.get_contactos_aprobados()
-    reportados = []
-    for c in contactos:
-        info = db.get_info_reportes(c['id'])
-        if info['mostrar']:
-            reportados.append((c, info))
+
+    # Una sola query — no itera 25k contactos
+    reportados = db.get_contactos_con_reportes()
 
     if not reportados:
         await update.message.reply_text("✅ No hay contactos en la lista negra.")
         return
 
-    admin = es_admin(update.effective_user.id)
     texto = f"⚠️ *Lista Negra — {len(reportados)} contactos*\n\n"
 
-    for i, (c, info) in enumerate(reportados[:20], 1):
+    for i, c in enumerate(reportados[:20], 1):
         nombre = f"{c['nombre']} {c['apellido']}"
         if len(nombre) > 22: nombre = nombre[:20] + "…"
-        estado = "🔴 Verificado" if info['verificado'] else f"🟡 {info['pendientes']} reportes"
+        verificado = c.get('verificado', False)
+        estado = "🔴 Verificado" if verificado else "🟡 Reportado"
         texto += f"*{i}.* {nombre.upper()}\n   📱 `{c['telefono']}` — {estado}\n\n"
 
     if len(reportados) > 20:
-        texto += f"_... y {len(reportados) - 20} más_"
+        texto += f"_... y {len(reportados) - 20} más_\n\n"
 
-    texto += "_Escribe el número para ver detalles_"
+    texto += "_Escribe el número para ver detalles completos_"
 
     await update.message.reply_text(texto, parse_mode="Markdown")
 
