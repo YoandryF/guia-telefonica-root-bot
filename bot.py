@@ -1656,6 +1656,22 @@ def create_app():
     return app
 
 
+async def _set_commands(app):
+    """Actualizar los comandos visibles en el menú de Telegram"""
+    from telegram import BotCommand, BotCommandScopeDefault, BotCommandScopeAllGroupChats
+    comandos_usuario = [
+        BotCommand("start", "👋 Inicio y bienvenida"),
+        BotCommand("agregar", "➕ Registrar un contacto"),
+        BotCommand("miscontactos", "📌 Mis contactos registrados"),
+        BotCommand("categorias", "📂 Ver categorías"),
+        BotCommand("reportar", "⚠️ Reportar un contacto"),
+        BotCommand("avalar", "👍 Avalar un contacto legítimo"),
+        BotCommand("listanegra", "🚫 Ver contactos reportados"),
+        BotCommand("ayuda", "❓ Ayuda"),
+    ]
+    await app.bot.set_my_commands(comandos_usuario, scope=BotCommandScopeDefault())
+
+
 def main():
     """Iniciar el bot (para uso local)"""
     app = create_app()

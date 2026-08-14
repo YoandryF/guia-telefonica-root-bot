@@ -169,6 +169,9 @@ def main():
     telegram_app = create_app()
     if telegram_app:
         logger.info("✅ Bot polling iniciado")
+        import asyncio
+        from bot import _set_commands
+        asyncio.run(_set_commands(telegram_app))
         telegram_app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
