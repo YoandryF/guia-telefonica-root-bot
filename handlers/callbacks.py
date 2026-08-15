@@ -188,3 +188,20 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "pend_next":
         context.user_data['pend_pagina'] = context.user_data.get('pend_pagina', 0) + 1
         await query.edit_message_text(f"➡️ Usa /pendientes para ver página {context.user_data['pend_pagina']+1}")
+
+    elif data.startswith("aval_aprobar_") or data.startswith("aval_rechazar_"):
+        if not admin:
+            await query.edit_message_text("🔒 Solo el administrador.")
+            return
+        accion = "aprobado" if data.startswith("aval_aprobar_") else "rechazado"
+        aval_id = data.replace("aval_aprobar_", "").replace("aval_rechazar_", "")
+        try:
+            db.client.table("avales").update({
+                "estado": accion,
+                "revisado_por": str(query.from_user.id),
+                "fecha_revision": datetime.utcnow().isoformat(),
+            }).ilike("id", f"{aval_id}%").execute()
+            emoji = "✅" if accion == "aprobado" else "❌"
+            await query.edit_message_text(f"{emoji} Aval {accion}.")
+        except Exception as e:
+            await query.edit_message_text(f"❌ Error: {e}")

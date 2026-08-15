@@ -42,7 +42,7 @@ from handlers.admin import (
     pendientes, aprobar, rechazar, estadisticas, eliminar,
     confirmar_eliminar, editar, reportes, desestimar,
     banear_reportador, desbanear, exportar, importar_archivo,
-    handle_texto_admin, verificar, reclamos, reportar,
+    handle_texto_admin, verificar, reclamos, reportar, avales,
 )
 from handlers.owner import (
     registrar_admin, listar_admins, eliminar_admin, config, setconfig,
@@ -107,6 +107,7 @@ def create_app():
 
     # Avales y reclamos
     app.add_handler(CommandHandler("avalar", avalar))
+    app.add_handler(CommandHandler("avales", avales))
     app.add_handler(CommandHandler("reclamar", reclamar))
     app.add_handler(CommandHandler("reclamos", reclamos))
 

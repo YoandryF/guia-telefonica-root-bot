@@ -622,3 +622,40 @@ async def reportar(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception:
                 pass
+
+
+async def avales(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ver avales pendientes de revisión (solo admin)"""
+    if not es_admin(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo el administrador.")
+        return
+
+    try:
+        response = db.client.table("avales").select(
+            "*, contactos(nombre, apellido, telefono)"
+        ).eq("estado", "pendiente").order("fecha").execute()
+
+        if not response.data:
+            await update.message.reply_text("✅ No hay avales pendientes.")
+            return
+
+        await update.message.reply_text(
+            f"👍 *Avales pendientes ({len(response.data)}):*",
+            parse_mode="Markdown"
+        )
+
+        for a in response.data[:10]:
+            contacto = a.get("contactos", {})
+            nombre = f"{contacto.get('nombre', '')} {contacto.get('apellido', '')}"
+            keyboard = [[
+                InlineKeyboardButton("✅ Aprobar", callback_data=f"aval_aprobar_{a['id'][:8]}"),
+                InlineKeyboardButton("❌ Rechazar", callback_data=f"aval_rechazar_{a['id'][:8]}"),
+            ]]
+            await update.message.reply_text(
+                f"👤 *{nombre}*\n📱 `{contacto.get('telefono', '')}`\n"
+                f"Por: `{a.get('avalado_por', 'desconocido')}`",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")

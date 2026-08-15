@@ -315,8 +315,32 @@ async def avalar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Contacto no encontrado.")
         return
     try:
-        db.client.table("avales").insert({"contacto_id": contacto["id"], "avalado_por": str(update.effective_user.id)}).execute()
-        await update.message.reply_text(f"👍 *Aval registrado* para {contacto['nombre']} {contacto['apellido']}", parse_mode="Markdown")
+        db.client.table("avales").insert({
+            "contacto_id": contacto["id"],
+            "avalado_por": str(update.effective_user.id),
+        }).execute()
+        await update.message.reply_text(
+            f"👍 *Aval enviado* para {contacto['nombre']} {contacto['apellido']}\n\n"
+            f"⏳ Pendiente de revisión por el administrador.\n"
+            f"Solo los avales aprobados afectan el score del contacto.",
+            parse_mode="Markdown"
+        )
+        # Notificar al admin
+        if ADMIN_CHAT_ID:
+            try:
+                await context.bot.send_message(
+                    chat_id=ADMIN_CHAT_ID,
+                    text=(
+                        f"👍 *Nuevo aval pendiente*\n\n"
+                        f"👤 {contacto['nombre']} {contacto['apellido']}\n"
+                        f"📱 `{contacto['telefono']}`\n"
+                        f"Por: @{update.effective_user.username or update.effective_user.first_name}\n\n"
+                        f"Usa /avales para gestionar"
+                    ),
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
     except Exception as e:
         if "duplicate" in str(e).lower():
             await update.message.reply_text("⚠️ Ya avalaste este contacto.")
