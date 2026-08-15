@@ -34,7 +34,7 @@ class SupabaseService:
     # ============================================
 
     def get_contactos_aprobados(self, limite: int = 100, offset: int = 0) -> list:
-        """Obtener contactos aprobados paginados — NUNCA cargar 25k de golpe"""
+        """Obtener contactos aprobados paginados — NUNCA cargar todo de golpe"""
         if not self._check_client():
             return []
 
@@ -434,45 +434,37 @@ class SupabaseService:
         except Exception as e:
             return {"error": str(e)}
 
-    def get_contactos_con_reportes(self, limite: int = 100) -> list:
+    def get_contactos_con_reportes(self, filtro: str = "todos", orden: str = "recientes") -> list:
         """
-        Obtener contactos que tienen reportes activos (pendiente o revisado).
-        Usa join !inner para filtrar en la BD sin traer todos los contactos.
-        Verificado en producción: tiene_reportes no existe como columna.
+        Lista negra — usa la RPC get_reportes_agrupados que existe en producción.
+        Verificada: devuelve contact_id, nombre, apellido, telefono,
+                    total_reportes, aprobados, pendientes, ultimo_reporte.
+        Escalable a 11M+ contactos: la lógica de agrupación vive en Postgres.
+
+        filtro: 'todos' | 'pendientes' | 'aprobados'
+        orden:  'recientes' | 'mas_reportados'
         """
         if not self._check_client():
             return []
         try:
-            response = (
-                self.client.table("contactos")
-                .select(
-                    "id, nombre, apellido, telefono, direccion, score_riesgo, verificado, "
-                    "reportes!inner(id, estado, motivo)"
-                )
-                .eq("estado", "aprobado")
-                .is_("deleted_at", None)
-                .in_("reportes.estado", ["pendiente", "revisado"])
-                .order("score_riesgo", desc=True)
-                .limit(limite)
-                .execute()
-            )
-            # Normalizar: quitar el array de reportes del objeto de contacto
+            response = self.client.rpc(
+                "get_reportes_agrupados",
+                {"filtro": filtro, "orden": orden}
+            ).execute()
+
             result = []
-            seen = set()
-            for c in response.data:
-                if c["id"] in seen:
-                    continue
-                seen.add(c["id"])
-                contacto = {
-                    "id": c["id"],
-                    "nombre": c["nombre"],
-                    "apellido": c["apellido"],
-                    "telefono": c["telefono"],
-                    "direccion": c.get("direccion"),
-                    "score_riesgo": c.get("score_riesgo", 0) or 0,
-                    "verificado": bool(c.get("verificado", False)),
-                }
-                result.append(contacto)
+            for c in (response.data or []):
+                result.append({
+                    "id": c.get("contact_id"),
+                    "nombre": c.get("nombre", ""),
+                    "apellido": c.get("apellido", ""),
+                    "telefono": c.get("telefono", ""),
+                    "total_reportes": c.get("total_reportes", 0),
+                    "aprobados": c.get("aprobados", 0),
+                    "pendientes": c.get("pendientes", 0),
+                    # verificado = tiene al menos 1 reporte aprobado (revisado)
+                    "verificado": (c.get("aprobados", 0) or 0) >= 1,
+                })
             return result
         except Exception as e:
             logger.error(f"Error get_contactos_con_reportes: {e}")
@@ -532,7 +524,6 @@ class SupabaseService:
         """Verificar conexión con Supabase"""
         if not self._check_client():
             return False
-
         try:
             self.client.table("categorias").select("id").limit(1).execute()
             return True
