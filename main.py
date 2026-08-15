@@ -1,7 +1,7 @@
 """
 Bot en thread principal, Flask en thread secundario.
 """
-import os, threading, logging
+import os, threading, logging, asyncio
 from dotenv import load_dotenv
 from flask import Flask, jsonify
 import requests
@@ -47,7 +47,6 @@ def cleanup_evidencias():
     """Borrar mensajes de evidencias de reportes resueltos hace >30 días"""
     if not SUPABASE_URL or not BOT_TOKEN or not EVIDENCE_GROUP:
         return jsonify({"error": "config missing"}), 500
-
     try:
         headers = {
             "apikey": SUPABASE_KEY,
@@ -55,7 +54,6 @@ def cleanup_evidencias():
         }
         from datetime import datetime, timedelta
         hace_30 = (datetime.utcnow() - timedelta(days=30)).isoformat()
-
         resp = requests.get(
             f"{SUPABASE_URL}/rest/v1/reportes"
             f"?evidencia_msg_id=not.is.null"
@@ -65,7 +63,6 @@ def cleanup_evidencias():
             headers=headers,
         )
         reportes = resp.json() if resp.status_code == 200 else []
-
         deleted = 0
         for r in reportes:
             msg_id = r.get("evidencia_msg_id")
@@ -79,13 +76,11 @@ def cleanup_evidencias():
                         deleted += 1
                 except Exception:
                     pass
-
                 requests.patch(
                     f"{SUPABASE_URL}/rest/v1/reportes?id=eq.{r['id']}",
                     headers={**headers, "Content-Type": "application/json"},
                     json={"evidencia_msg_id": None},
                 )
-
         return jsonify({"deleted": deleted, "total_checked": len(reportes)}), 200
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
@@ -101,10 +96,8 @@ def notificar_reporte():
     estado = data.get("estado", "")
     contacto = data.get("contacto_nombre", "el contacto")
     nota = data.get("nota_admin", "")
-
     if not telegram_id:
         return jsonify({"error": "missing telegram_user_id"}), 400
-
     if estado == "revisado":
         msg = (f"✅ *Tu reporte fue aprobado*\n\n"
                f"El contacto *{contacto}* ha sido marcado como riesgoso gracias a tu reporte.\n"
@@ -115,7 +108,6 @@ def notificar_reporte():
                f"{'📝 Nota del admin: ' + nota if nota else ''}")
     else:
         return jsonify({"ok": False, "reason": "estado no notificable"}), 200
-
     ok = _tg_send(telegram_id, msg)
     return jsonify({"ok": ok}), 200
 
@@ -125,7 +117,6 @@ def alerta_pendientes():
     """Alertar al admin si hay >= UMBRAL_PENDIENTES reportes sin revisar."""
     if not SUPABASE_URL or not ADMIN_CHAT_ID:
         return jsonify({"error": "config missing"}), 500
-
     try:
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
         resp = requests.post(
@@ -134,14 +125,12 @@ def alerta_pendientes():
             json={},
         )
         total = resp.json() if resp.status_code == 200 else 0
-
         if isinstance(total, int) and total >= UMBRAL_PENDIENTES:
             msg = (f"🚨 *Alerta: {total} reportes pendientes*\n\n"
                    f"Hay {total} reportes sin revisar en la Guía Telefónica.\n"
                    f"Abre el panel admin para gestionarlos.")
             _tg_send(ADMIN_CHAT_ID, msg)
             return jsonify({"alerta_enviada": True, "pendientes": total}), 200
-
         return jsonify({"alerta_enviada": False, "pendientes": total}), 200
     except Exception as e:
         logger.error(f"Alerta pendientes error: {e}")
@@ -156,14 +145,23 @@ def main():
     threading.Thread(target=run_flask, daemon=True).start()
     logger.info("✅ Flask iniciado")
 
-    from bot import create_app
+    from bot import create_app, _set_commands
     telegram_app = create_app()
-    if telegram_app:
-        logger.info("✅ Bot polling iniciado")
-        import asyncio
-        from bot import _set_commands
-        asyncio.run(_set_commands(telegram_app))
+    if not telegram_app:
+        return
+
+    logger.info("✅ Bot polling iniciado")
+
+    # Crear un event loop nuevo y persistente para todo el ciclo de vida del bot.
+    # asyncio.run() destruye el loop al terminar — por eso _set_commands y
+    # run_polling deben correr en el MISMO loop, no en loops separados.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_set_commands(telegram_app))
         telegram_app.run_polling(drop_pending_updates=False)
+    finally:
+        loop.close()
 
 if __name__ == "__main__":
     main()
