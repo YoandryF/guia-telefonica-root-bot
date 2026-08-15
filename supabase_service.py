@@ -447,35 +447,24 @@ class SupabaseService:
         except Exception as e:
             return {"error": str(e)}
 
-    def get_contactos_con_reportes(self) -> list:
-        """Obtener contactos que tienen reportes activos — UNA sola query eficiente."""
+    def get_contactos_con_reportes(self, limite: int = 100) -> list:
+        """Obtener contactos con reportes activos — query directa sobre campo tiene_reportes."""
         if not self._check_client():
             return []
         try:
-            # Query directa: contactos aprobados que tienen reportes pendientes o revisados
-            # Agrupa en Supabase, no en Python
-            response = self.client.rpc('get_contactos_lista_negra').execute()
-            if response.data:
-                return response.data
-        except Exception:
-            pass
-
-        # Fallback: query directa sin RPC
-        try:
             response = (
                 self.client.table("contactos")
-                .select("id, nombre, apellido, telefono, direccion")
+                .select("id, nombre, apellido, telefono, direccion, score_riesgo, verificado")
                 .eq("estado", "aprobado")
                 .is_("deleted_at", None)
                 .eq("tiene_reportes", True)
-                .order("nombre")
+                .order("score_riesgo", desc=True)
+                .limit(limite)
                 .execute()
             )
-            # Agregar flag de verificado basado en score_riesgo o reportes aprobados
             result = []
             for c in response.data:
-                c['verificado'] = (c.get('score_riesgo', 0) or 0) > 50
-                c['pendientes'] = 0  # valor por defecto sin segunda query
+                c['verificado'] = bool(c.get('verificado', False))
                 result.append(c)
             return result
         except Exception as e:
