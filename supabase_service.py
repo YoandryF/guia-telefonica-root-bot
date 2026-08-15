@@ -41,7 +41,7 @@ class SupabaseService:
         try:
             response = (
                 self.client.table("contactos")
-                .select("id, nombre, apellido, telefono, direccion, categoria_id, tiene_reportes")
+                .select("id, nombre, apellido, telefono, direccion, categoria_id")
                 .eq("estado", "aprobado")
                 .is_("deleted_at", None)
                 .order("nombre")
@@ -77,7 +77,7 @@ class SupabaseService:
         try:
             response = (
                 self.client.table("contactos")
-                .select("id, nombre, apellido, telefono, direccion, tiene_reportes")
+                .select("id, nombre, apellido, telefono, direccion")
                 .eq("estado", "aprobado")
                 .is_("deleted_at", None)
                 .or_(
@@ -147,10 +147,8 @@ class SupabaseService:
             return None
 
         try:
-            # Normalizar: solo dígitos
             tel_limpio = ''.join(c for c in telefono if c.isdigit())
 
-            # Intentar búsqueda directa
             response = (
                 self.client.table("contactos")
                 .select("*")
@@ -162,7 +160,6 @@ class SupabaseService:
             if response.data:
                 return response.data[0]
 
-            # Si no encuentra, buscar con solo dígitos
             if tel_limpio != telefono:
                 response = (
                     self.client.table("contactos")
@@ -175,7 +172,6 @@ class SupabaseService:
                 if response.data:
                     return response.data[0]
 
-            # Intentar con los últimos 8 dígitos (sin código país)
             if len(tel_limpio) > 8:
                 ultimos8 = tel_limpio[-8:]
                 response = (
@@ -200,7 +196,6 @@ class SupabaseService:
             return None
 
         try:
-            # Si tiene letras → buscar por ID con LIKE en Supabase
             if any(c.isalpha() for c in identificador):
                 response = (
                     self.client.table("contactos")
@@ -242,7 +237,6 @@ class SupabaseService:
             return {"error": "BD no disponible"}
 
         try:
-            # Buscar por ID parcial
             response = (
                 self.client.table("contactos")
                 .select("*")
@@ -251,7 +245,6 @@ class SupabaseService:
                 .execute()
             )
 
-            # Si no, buscar por teléfono
             if not response.data:
                 response = (
                     self.client.table("contactos")
@@ -267,7 +260,6 @@ class SupabaseService:
             contacto = response.data[0]
             full_id = contacto["id"]
 
-            # Actualizar estado
             update_response = (
                 self.client.table("contactos")
                 .update({
@@ -280,7 +272,6 @@ class SupabaseService:
                 .execute()
             )
 
-            # Registrar en historial
             self._registrar_historial(full_id, "aprobado", realizado_por=aprobado_por)
 
             return {"data": update_response.data[0] if update_response.data else contacto}
@@ -294,7 +285,6 @@ class SupabaseService:
             return {"error": "BD no disponible"}
 
         try:
-            # Buscar por ID parcial
             response = (
                 self.client.table("contactos")
                 .select("*")
@@ -303,7 +293,6 @@ class SupabaseService:
                 .execute()
             )
 
-            # Si no, buscar por teléfono
             if not response.data:
                 response = (
                     self.client.table("contactos")
@@ -319,7 +308,6 @@ class SupabaseService:
             contacto = response.data[0]
             full_id = contacto["id"]
 
-            # Actualizar estado
             update_response = (
                 self.client.table("contactos")
                 .update({
@@ -331,7 +319,6 @@ class SupabaseService:
                 .execute()
             )
 
-            # Registrar en historial
             self._registrar_historial(full_id, "rechazado", realizado_por="admin")
 
             return {"data": update_response.data[0] if update_response.data else contacto}
@@ -448,24 +435,44 @@ class SupabaseService:
             return {"error": str(e)}
 
     def get_contactos_con_reportes(self, limite: int = 100) -> list:
-        """Obtener contactos con reportes activos — query directa sobre campo tiene_reportes."""
+        """
+        Obtener contactos que tienen reportes activos (pendiente o revisado).
+        Usa join !inner para filtrar en la BD sin traer todos los contactos.
+        Verificado en producción: tiene_reportes no existe como columna.
+        """
         if not self._check_client():
             return []
         try:
             response = (
                 self.client.table("contactos")
-                .select("id, nombre, apellido, telefono, direccion, score_riesgo, verificado")
+                .select(
+                    "id, nombre, apellido, telefono, direccion, score_riesgo, verificado, "
+                    "reportes!inner(id, estado, motivo)"
+                )
                 .eq("estado", "aprobado")
                 .is_("deleted_at", None)
-                .eq("tiene_reportes", True)
+                .in_("reportes.estado", ["pendiente", "revisado"])
                 .order("score_riesgo", desc=True)
                 .limit(limite)
                 .execute()
             )
+            # Normalizar: quitar el array de reportes del objeto de contacto
             result = []
+            seen = set()
             for c in response.data:
-                c['verificado'] = bool(c.get('verificado', False))
-                result.append(c)
+                if c["id"] in seen:
+                    continue
+                seen.add(c["id"])
+                contacto = {
+                    "id": c["id"],
+                    "nombre": c["nombre"],
+                    "apellido": c["apellido"],
+                    "telefono": c["telefono"],
+                    "direccion": c.get("direccion"),
+                    "score_riesgo": c.get("score_riesgo", 0) or 0,
+                    "verificado": bool(c.get("verificado", False)),
+                }
+                result.append(contacto)
             return result
         except Exception as e:
             logger.error(f"Error get_contactos_con_reportes: {e}")
@@ -542,7 +549,6 @@ class SupabaseService:
             return {"error": "BD no disponible"}
 
         try:
-            # Crear usuario en Supabase Auth
             auth_response = self.client.auth.admin.create_user({
                 "email": email,
                 "password": password,
@@ -551,7 +557,6 @@ class SupabaseService:
 
             user_id = auth_response.user.id
 
-            # Registrar en tabla admins
             self.client.table("admins").insert({
                 "user_id": user_id,
                 "email": email,
