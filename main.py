@@ -1,7 +1,7 @@
 """
 Bot en thread principal, Flask en thread secundario.
 """
-import os, threading, logging
+import os, threading, logging, time
 from dotenv import load_dotenv
 from flask import Flask, jsonify
 import requests
@@ -18,6 +18,7 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 EVIDENCE_GROUP = os.getenv("TELEGRAM_EVIDENCE_GROUP", "")
 ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
 UMBRAL_PENDIENTES = int(os.getenv("UMBRAL_PENDIENTES_ALERTA", "10"))
+BOT_RENDER_URL = os.getenv("BOT_RENDER_URL", "").strip()
 
 def _tg_send(chat_id: str, text: str):
     """Enviar mensaje de Telegram vía API"""
@@ -34,6 +35,22 @@ def _tg_send(chat_id: str, text: str):
         logger.error(f"TG send error: {e}")
         return False
 
+def _self_ping():
+    """
+    Ping propio cada 4 minutos para evitar hibernación en Render free tier.
+    UptimeRobot hace ping cada 5min — este cubre el gap y reduce cold starts.
+    """
+    if not BOT_RENDER_URL:
+        logger.warning("BOT_RENDER_URL no configurado — self-ping desactivado")
+        return
+    while True:
+        time.sleep(240)  # 4 minutos
+        try:
+            requests.get(f"{BOT_RENDER_URL}/health", timeout=8)
+            logger.debug("Self-ping OK")
+        except Exception as e:
+            logger.warning(f"Self-ping error: {e}")
+
 @app.route("/")
 def root():
     return jsonify({"app": "Guia Telefonica Bot", "status": "running"}), 200
@@ -49,12 +66,10 @@ def cleanup_evidencias():
         return jsonify({"error": "config missing"}), 500
 
     try:
-        # Buscar reportes resueltos con evidencia, resueltos hace >30 días
         headers = {
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}",
         }
-        # Reportes con evidencia cuyo estado es 'resuelto' y fecha_reporte < hace 30 días
         from datetime import datetime, timedelta
         hace_30 = (datetime.utcnow() - timedelta(days=30)).isoformat()
 
@@ -72,7 +87,6 @@ def cleanup_evidencias():
         for r in reportes:
             msg_id = r.get("evidencia_msg_id")
             if msg_id:
-                # Borrar mensaje de Telegram
                 try:
                     tg_resp = requests.post(
                         f"https://api.telegram.org/bot{BOT_TOKEN}/deleteMessage",
@@ -83,7 +97,6 @@ def cleanup_evidencias():
                 except Exception:
                     pass
 
-                # Limpiar referencia en Supabase
                 requests.patch(
                     f"{SUPABASE_URL}/rest/v1/reportes?id=eq.{r['id']}",
                     headers={**headers, "Content-Type": "application/json"},
@@ -98,10 +111,7 @@ def cleanup_evidencias():
 
 @app.route("/notificar-reporte", methods=["POST"])
 def notificar_reporte():
-    """Notificar al reportador cuando su reporte fue resuelto.
-    Llamar desde el cron o desde el trigger de Supabase.
-    Body: { telegram_user_id, estado, contacto_nombre, nota_admin? }
-    """
+    """Notificar al reportador cuando su reporte fue resuelto."""
     from flask import request
     data = request.json or {}
     telegram_id = data.get("telegram_user_id")
@@ -129,9 +139,7 @@ def notificar_reporte():
 
 @app.route("/alerta-pendientes", methods=["POST"])
 def alerta_pendientes():
-    """Alertar al admin si hay >= UMBRAL_PENDIENTES reportes sin revisar.
-    Llamado desde el cron diario.
-    """
+    """Alertar al admin si hay >= UMBRAL_PENDIENTES reportes sin revisar."""
     if not SUPABASE_URL or not ADMIN_CHAT_ID:
         return jsonify({"error": "config missing"}), 500
 
@@ -162,8 +170,13 @@ def run_flask():
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 def main():
+    # Flask en thread secundario
     threading.Thread(target=run_flask, daemon=True).start()
     logger.info("✅ Flask iniciado")
+
+    # Self-ping en thread separado para reducir hibernación Render free
+    threading.Thread(target=_self_ping, daemon=True).start()
+    logger.info("✅ Self-ping iniciado (cada 4min)")
 
     from bot import create_app
     telegram_app = create_app()
@@ -172,7 +185,10 @@ def main():
         import asyncio
         from bot import _set_commands
         asyncio.run(_set_commands(telegram_app))
-        telegram_app.run_polling(drop_pending_updates=True)
+        # drop_pending_updates=False: procesa mensajes acumulados al despertar
+        # Con True: Render duerme, usuario manda comando, Render despierta,
+        #           descarta el mensaje → usuario espera eternamente sin respuesta
+        telegram_app.run_polling(drop_pending_updates=False)
 
 if __name__ == "__main__":
     main()
