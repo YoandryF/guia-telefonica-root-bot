@@ -442,3 +442,80 @@ async def verificarme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"\u2705 *Contacto verificado:* {contacto['nombre']} {contacto['apellido']}\n\nAhora tiene badge verde \u2705", parse_mode="Markdown")
     except Exception as e:
         await update.message.reply_text(f"\u274c Error: {e}")
+
+
+async def micodigo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Genera o muestra el código de invitación del usuario."""
+    user = update.effective_user
+    chat_id = str(user.id)
+
+    try:
+        codigo = db.client.rpc(
+            'generar_codigo_invitacion',
+            {'p_telegram_user_id': chat_id}
+        ).execute().data
+
+        if not codigo:
+            await update.message.reply_text("❌ Error generando código. Intenta de nuevo.")
+            return
+
+        link = f"guia://invitacion/{codigo}"
+        await update.message.reply_text(
+            f"🎁 *Tu código de invitación*\n\n"
+            f"`{codigo}`\n\n"
+            f"Comparte este mensaje con quien quieras invitar:\n\n"
+            f"_📱 Únete a la Guía Telefónica Colaborativa._\n"
+            f"_Usa mi código: *{codigo}*_\n"
+            f"_Descarga: https://github.com/YoandryF/guia-telefonica-root-app/releases/latest_\n\n"
+            f"O comparte el link directo:\n`{link}`",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def misreferidos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra los referidos del usuario."""
+    chat_id = str(update.effective_user.id)
+
+    try:
+        result = db.client.rpc(
+            'get_mis_referidos',
+            {'p_telegram_user_id': chat_id}
+        ).execute().data
+
+        if not result:
+            await update.message.reply_text("❌ Error obteniendo referidos.")
+            return
+
+        codigo = result.get('codigo', '')
+        total = result.get('total', 0)
+        referidos = result.get('referidos') or []
+
+        if not codigo:
+            await update.message.reply_text(
+                "Aún no tienes código de invitación.\n"
+                "Usa /micodigo para generarlo."
+            )
+            return
+
+        texto = f"🎁 *Mis referidos*\n\n"
+        texto += f"📌 Tu código: `{codigo}`\n"
+        texto += f"👥 Total referidos: *{total}*\n\n"
+
+        if referidos:
+            activos = sum(1 for r in referidos if r.get('activo'))
+            texto += f"✅ Activos: {activos}\n\n"
+            texto += "_Últimos referidos:_\n"
+            for r in referidos[:10]:
+                fecha = r.get('fecha', '')[:10] if r.get('fecha') else '—'
+                estado = "✅" if r.get('activo') else "⬜"
+                texto += f"  {estado} Se unió el {fecha}\n"
+            if total > 10:
+                texto += f"  _... y {total - 10} más_\n"
+        else:
+            texto += "_Aún no tienes referidos. ¡Comparte tu código!_"
+
+        await update.message.reply_text(texto, parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")

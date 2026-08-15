@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 from handlers.public import (
     start, ayuda, listar, buscar, miscontactos, categorias,
     listanegra, handle_texto_libre, avalar, reclamar,
-    cancelar_registro, verificarme,
+    cancelar_registro, verificarme, micodigo, misreferidos,
 )
 from handlers.admin import (
     pendientes, aprobar, rechazar, estadisticas, eliminar,
@@ -104,6 +104,10 @@ def create_app():
     # Verificacion
     app.add_handler(CommandHandler("verificarme", verificarme))
     app.add_handler(CommandHandler("verificar", verificar))
+
+    # Invitaciones / referidos
+    app.add_handler(CommandHandler("micodigo", micodigo))
+    app.add_handler(CommandHandler("misreferidos", misreferidos))
 
     # Avales y reclamos
     app.add_handler(CommandHandler("avalar", avalar))
