@@ -29,11 +29,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cache = _cache_resultados.get(chat_id)
 
         if cache and cache.get('tipo') == 'listar':
-            # Paginación real desde Supabase
+            # Paginación real desde Supabase — total ya en cache, no hace segunda query
             por_pagina = 10
             total = cache.get('total', 0)
             offset = (pagina - 1) * por_pagina
-            contactos = db.get_contactos_aprobados(limite=por_pagina, offset=offset)
+            contactos, _ = db.get_contactos_aprobados(limite=por_pagina, offset=offset)
             total_pags = max(1, (total + por_pagina - 1) // por_pagina)
             texto, markup = _formato_lista_compacta(contactos, offset + 1, total, pagina, total_pags, '')
             await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=markup)
@@ -79,8 +79,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "cmd_listar":
         por_pagina = 10
-        total = db.contar_contactos_aprobados()
-        contactos = db.get_contactos_aprobados(limite=por_pagina, offset=0)
+        contactos, total = db.get_contactos_aprobados(limite=por_pagina, offset=0)
         if not contactos:
             await query.edit_message_text("📭 No hay contactos aprobados aún.")
             return

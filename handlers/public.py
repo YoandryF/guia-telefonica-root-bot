@@ -144,8 +144,7 @@ async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     por_pagina = 10
     offset = (pagina - 1) * por_pagina
-    contactos = db.get_contactos_aprobados(limite=por_pagina, offset=offset)
-    total = db.contar_contactos_aprobados()
+    contactos, total = db.get_contactos_aprobados(limite=por_pagina, offset=offset)
 
     if not contactos:
         await msg.edit_text("📭 No hay contactos aprobados aún.")

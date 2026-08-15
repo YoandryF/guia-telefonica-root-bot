@@ -33,24 +33,27 @@ class SupabaseService:
     # CONTACTOS
     # ============================================
 
-    def get_contactos_aprobados(self, limite: int = 100, offset: int = 0) -> list:
-        """Obtener contactos aprobados paginados — usa idx_contactos_estado_activo"""
+    def get_contactos_aprobados(self, limite: int = 100, offset: int = 0) -> tuple[list, int]:
+        """
+        Obtener contactos aprobados paginados — usa idx_contactos_estado_activo.
+        Devuelve (lista, total) en una sola query via count=exact.
+        """
         if not self._check_client():
-            return []
+            return [], 0
         try:
             response = (
                 self.client.table("contactos")
-                .select("id, nombre, apellido, telefono, direccion, categoria_id")
+                .select("id, nombre, apellido, telefono, direccion, categoria_id", count="exact")
                 .eq("estado", "aprobado")
                 .is_("deleted_at", None)
                 .order("nombre")
                 .range(offset, offset + limite - 1)
                 .execute()
             )
-            return response.data
+            return response.data, (response.count or 0)
         except Exception as e:
             logger.error(f"Error obteniendo contactos aprobados: {e}")
-            return []
+            return [], 0
 
     def contar_contactos_aprobados(self) -> int:
         """Contar total sin cargar todos en memoria"""
