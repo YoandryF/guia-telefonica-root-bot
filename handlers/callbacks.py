@@ -44,6 +44,39 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("⚠️ Sesión expirada. Busca de nuevo.", show_alert=True)
         return
 
+    elif data.startswith("ln_"):
+        # Paginación lista negra
+        pagina = int(data.replace("ln_", "")) if data.replace("ln_", "").isdigit() else 1
+        chat_id = str(query.from_user.id)
+        cache = _cache_resultados.get(chat_id)
+        total = cache.get('total', 0) if cache and cache.get('tipo') == 'listanegra' else db.contar_contactos_con_reportes()
+        por_pagina = 10
+        offset = (pagina - 1) * por_pagina
+        total_pags = max(1, (total + por_pagina - 1) // por_pagina)
+        reportados = db.get_contactos_con_reportes(limite=por_pagina, offset=offset)
+        inicio_num = offset + 1
+
+        texto = f"⚠️ *Lista Negra — {total} contactos*\n\n"
+        for i, c in enumerate(reportados, inicio_num):
+            nombre = f"{c['nombre']} {c['apellido']}"
+            if len(nombre) > 22:
+                nombre = nombre[:20] + "…"
+            estado = "🔴 Verificado" if c.get('verificado') else "🟡 Reportado"
+            texto += f"*{i}.* {nombre.upper()}\n   📱 `{c['telefono']}` — {estado}\n\n"
+        texto += f"📊 Mostrando {inicio_num}-{inicio_num + len(reportados) - 1} de *{total}*\n"
+        texto += "_Escribe el número para ver detalles completos_"
+
+        botones = []
+        fila = []
+        if pagina > 1:
+            fila.append(InlineKeyboardButton("⬅️ Anterior", callback_data=f"ln_{pagina - 1}"))
+        if pagina < total_pags:
+            fila.append(InlineKeyboardButton("Siguiente ➡️", callback_data=f"ln_{pagina + 1}"))
+        if fila:
+            botones.append(fila)
+        await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(botones) if botones else None)
+        return
+
     elif data == "cmd_listar":
         por_pagina = 10
         total = db.contar_contactos_aprobados()

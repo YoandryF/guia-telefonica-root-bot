@@ -421,9 +421,9 @@ class SupabaseService:
         except Exception as e:
             return {"error": str(e)}
 
-    def get_contactos_con_reportes(self, limite: int = 100) -> list:
+    def get_contactos_con_reportes(self, limite: int = 10, offset: int = 0) -> list:
         """
-        Lista negra — O(log n) via idx_contactos_lista_negra.
+        Lista negra paginada — O(log n) via idx_contactos_lista_negra.
         Filtra por tiene_reportes=true (columna mantenida por trigger
         trg_sync_tiene_reportes). Escala a 11M+ contactos sin degradación.
         """
@@ -432,12 +432,12 @@ class SupabaseService:
         try:
             response = (
                 self.client.table("contactos")
-                .select("id, nombre, apellido, telefono, direccion, score_riesgo, verificado")
+                .select("id, nombre, apellido, telefono, score_riesgo, verificado")
                 .eq("tiene_reportes", True)
                 .eq("estado", "aprobado")
                 .is_("deleted_at", None)
                 .order("score_riesgo", desc=True)
-                .limit(limite)
+                .range(offset, offset + limite - 1)
                 .execute()
             )
             result = []
@@ -447,7 +447,6 @@ class SupabaseService:
                     "nombre": c["nombre"],
                     "apellido": c["apellido"],
                     "telefono": c["telefono"],
-                    "direccion": c.get("direccion"),
                     "score_riesgo": c.get("score_riesgo", 0) or 0,
                     "verificado": bool(c.get("verificado", False)),
                 })
@@ -455,6 +454,23 @@ class SupabaseService:
         except Exception as e:
             logger.error(f"Error get_contactos_con_reportes: {e}")
             return []
+
+    def contar_contactos_con_reportes(self) -> int:
+        """Contar total de contactos en lista negra sin cargar datos"""
+        if not self._check_client():
+            return 0
+        try:
+            response = (
+                self.client.table("contactos")
+                .select("id", count="exact")
+                .eq("tiene_reportes", True)
+                .eq("estado", "aprobado")
+                .is_("deleted_at", None)
+                .execute()
+            )
+            return response.count or 0
+        except Exception:
+            return 0
 
     def get_conteo_reportes(self, contacto_id: str) -> int:
         """Obtener cantidad de reportes activos de un contacto"""

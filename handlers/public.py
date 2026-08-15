@@ -235,29 +235,57 @@ async def categorias(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def listanegra(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Lista negra compacta — contactos reportados (query eficiente)"""
+    """Lista negra paginada — contactos reportados ordenados por score de riesgo"""
+    pagina = 1
+    if context.args:
+        try:
+            pagina = int(context.args[0])
+        except ValueError:
+            pass
+
     msg = await update.message.reply_text("⏳ Cargando lista negra...")
     await update.message.chat.send_action("typing")
 
-    reportados = db.get_contactos_con_reportes()
+    por_pagina = 10
+    offset = (pagina - 1) * por_pagina
+    reportados = db.get_contactos_con_reportes(limite=por_pagina, offset=offset)
+    total = db.contar_contactos_con_reportes()
 
-    if not reportados:
+    if not reportados and pagina == 1:
         await msg.edit_text("✅ No hay contactos en la lista negra.")
         return
 
-    texto = f"⚠️ *Lista Negra — {len(reportados)} contactos*\n\n"
-    for i, c in enumerate(reportados[:20], 1):
+    total_pags = max(1, (total + por_pagina - 1) // por_pagina)
+    inicio_num = offset + 1
+
+    # Guardar en cache para paginación por botones
+    chat_id = str(update.effective_user.id)
+    _cache_resultados[chat_id] = {'tipo': 'listanegra', 'total': total, 'por_pagina': por_pagina}
+
+    texto = f"⚠️ *Lista Negra — {total} contactos*\n\n"
+    for i, c in enumerate(reportados, inicio_num):
         nombre = f"{c['nombre']} {c['apellido']}"
-        if len(nombre) > 22: nombre = nombre[:20] + "…"
+        if len(nombre) > 22:
+            nombre = nombre[:20] + "…"
         verificado = c.get('verificado', False)
         estado = "🔴 Verificado" if verificado else "🟡 Reportado"
         texto += f"*{i}.* {nombre.upper()}\n   📱 `{c['telefono']}` — {estado}\n\n"
 
-    if len(reportados) > 20:
-        texto += f"_... y {len(reportados) - 20} más_\n\n"
+    texto += f"📊 Mostrando {inicio_num}-{inicio_num + len(reportados) - 1} de *{total}*\n"
     texto += "_Escribe el número para ver detalles completos_"
 
-    await msg.edit_text(texto, parse_mode="Markdown")
+    # Botones de paginación
+    botones = []
+    fila = []
+    if pagina > 1:
+        fila.append(InlineKeyboardButton("⬅️ Anterior", callback_data=f"ln_{pagina - 1}"))
+    if pagina < total_pags:
+        fila.append(InlineKeyboardButton("Siguiente ➡️", callback_data=f"ln_{pagina + 1}"))
+    if fila:
+        botones.append(fila)
+
+    markup = InlineKeyboardMarkup(botones) if botones else None
+    await msg.edit_text(texto, parse_mode="Markdown", reply_markup=markup)
 
 
 async def handle_texto_libre(update: Update, context: ContextTypes.DEFAULT_TYPE):
