@@ -34,10 +34,9 @@ class SupabaseService:
     # ============================================
 
     def get_contactos_aprobados(self, limite: int = 100, offset: int = 0) -> list:
-        """Obtener contactos aprobados paginados — NUNCA cargar todo de golpe"""
+        """Obtener contactos aprobados paginados — usa idx_contactos_estado_activo"""
         if not self._check_client():
             return []
-
         try:
             response = (
                 self.client.table("contactos")
@@ -73,7 +72,6 @@ class SupabaseService:
         """Buscar contactos aprobados con límite"""
         if not self._check_client():
             return []
-
         try:
             response = (
                 self.client.table("contactos")
@@ -101,7 +99,6 @@ class SupabaseService:
         """Registrar nuevo contacto (estado pendiente)"""
         if not self._check_client():
             return {"error": "BD no disponible"}
-
         try:
             data = {
                 "nombre": nombre,
@@ -126,7 +123,6 @@ class SupabaseService:
         """Obtener contactos pendientes de aprobación"""
         if not self._check_client():
             return []
-
         try:
             response = (
                 self.client.table("contactos")
@@ -145,7 +141,6 @@ class SupabaseService:
         """Buscar contacto por teléfono (normalizado)"""
         if not self._check_client():
             return None
-
         try:
             tel_limpio = ''.join(c for c in telefono if c.isdigit())
 
@@ -191,10 +186,9 @@ class SupabaseService:
             return None
 
     def buscar_por_id_o_telefono(self, identificador: str) -> dict:
-        """Buscar contacto por ID parcial o teléfono — sin cargar todo"""
+        """Buscar contacto por ID parcial o teléfono"""
         if not self._check_client():
             return None
-
         try:
             if any(c.isalpha() for c in identificador):
                 response = (
@@ -213,10 +207,9 @@ class SupabaseService:
             return None
 
     def get_contactos_por_creador(self, chat_id: str) -> list:
-        """Obtener contactos registrados por un usuario"""
+        """Obtener contactos registrados por un usuario — usa idx_contactos_creado_por"""
         if not self._check_client():
             return []
-
         try:
             response = (
                 self.client.table("contactos")
@@ -232,10 +225,9 @@ class SupabaseService:
             return []
 
     def aprobar_contacto(self, identificador: str, aprobado_por: str = None) -> dict:
-        """Aprobar un contacto pendiente (busca por ID parcial o teléfono)"""
+        """Aprobar un contacto pendiente"""
         if not self._check_client():
             return {"error": "BD no disponible"}
-
         try:
             response = (
                 self.client.table("contactos")
@@ -273,17 +265,15 @@ class SupabaseService:
             )
 
             self._registrar_historial(full_id, "aprobado", realizado_por=aprobado_por)
-
             return {"data": update_response.data[0] if update_response.data else contacto}
         except Exception as e:
             logger.error(f"Error aprobando contacto: {e}")
             return {"error": str(e)}
 
     def rechazar_contacto(self, identificador: str, motivo: str = None) -> dict:
-        """Rechazar un contacto pendiente (busca por ID parcial o teléfono)"""
+        """Rechazar un contacto pendiente"""
         if not self._check_client():
             return {"error": "BD no disponible"}
-
         try:
             response = (
                 self.client.table("contactos")
@@ -320,7 +310,6 @@ class SupabaseService:
             )
 
             self._registrar_historial(full_id, "rechazado", realizado_por="admin")
-
             return {"data": update_response.data[0] if update_response.data else contacto}
         except Exception as e:
             logger.error(f"Error rechazando contacto: {e}")
@@ -334,7 +323,6 @@ class SupabaseService:
         """Obtener categorías activas"""
         if not self._check_client():
             return []
-
         try:
             response = (
                 self.client.table("categorias")
@@ -356,7 +344,6 @@ class SupabaseService:
         """Obtener estadísticas generales"""
         if not self._check_client():
             return {}
-
         try:
             aprobados = self.client.table("contactos").select("id", count="exact").eq("estado", "aprobado").is_("deleted_at", None).execute()
             pendientes = self.client.table("contactos").select("id", count="exact").eq("estado", "pendiente").is_("deleted_at", None).execute()
@@ -383,7 +370,6 @@ class SupabaseService:
         """Registrar o actualizar usuario de Telegram"""
         if not self._check_client():
             return
-
         try:
             self.client.table("usuarios_telegram").upsert({
                 "chat_id": chat_id,
@@ -418,7 +404,8 @@ class SupabaseService:
     # REPORTES
     # ============================================
 
-    def reportar_contacto(self, contacto_id: str, motivo: str, descripcion: str = None, reportado_por: str = None) -> dict:
+    def reportar_contacto(self, contacto_id: str, motivo: str, descripcion: str = None,
+                          reportado_por: str = None) -> dict:
         """Reportar un contacto"""
         if not self._check_client():
             return {"error": "BD no disponible"}
@@ -434,36 +421,35 @@ class SupabaseService:
         except Exception as e:
             return {"error": str(e)}
 
-    def get_contactos_con_reportes(self, filtro: str = "todos", orden: str = "recientes") -> list:
+    def get_contactos_con_reportes(self, limite: int = 100) -> list:
         """
-        Lista negra — usa la RPC get_reportes_agrupados que existe en producción.
-        Verificada: devuelve contact_id, nombre, apellido, telefono,
-                    total_reportes, aprobados, pendientes, ultimo_reporte.
-        Escalable a 11M+ contactos: la lógica de agrupación vive en Postgres.
-
-        filtro: 'todos' | 'pendientes' | 'aprobados'
-        orden:  'recientes' | 'mas_reportados'
+        Lista negra — O(log n) via idx_contactos_lista_negra.
+        Filtra por tiene_reportes=true (columna mantenida por trigger
+        trg_sync_tiene_reportes). Escala a 11M+ contactos sin degradación.
         """
         if not self._check_client():
             return []
         try:
-            response = self.client.rpc(
-                "get_reportes_agrupados",
-                {"filtro": filtro, "orden": orden}
-            ).execute()
-
+            response = (
+                self.client.table("contactos")
+                .select("id, nombre, apellido, telefono, direccion, score_riesgo, verificado")
+                .eq("tiene_reportes", True)
+                .eq("estado", "aprobado")
+                .is_("deleted_at", None)
+                .order("score_riesgo", desc=True)
+                .limit(limite)
+                .execute()
+            )
             result = []
             for c in (response.data or []):
                 result.append({
-                    "id": c.get("contact_id"),
-                    "nombre": c.get("nombre", ""),
-                    "apellido": c.get("apellido", ""),
-                    "telefono": c.get("telefono", ""),
-                    "total_reportes": c.get("total_reportes", 0),
-                    "aprobados": c.get("aprobados", 0),
-                    "pendientes": c.get("pendientes", 0),
-                    # verificado = tiene al menos 1 reporte aprobado (revisado)
-                    "verificado": (c.get("aprobados", 0) or 0) >= 1,
+                    "id": c["id"],
+                    "nombre": c["nombre"],
+                    "apellido": c["apellido"],
+                    "telefono": c["telefono"],
+                    "direccion": c.get("direccion"),
+                    "score_riesgo": c.get("score_riesgo", 0) or 0,
+                    "verificado": bool(c.get("verificado", False)),
                 })
             return result
         except Exception as e:
@@ -475,7 +461,13 @@ class SupabaseService:
         if not self._check_client():
             return 0
         try:
-            response = self.client.table("reportes").select("id", count="exact").eq("contacto_id", contacto_id).in_("estado", ["pendiente", "revisado"]).execute()
+            response = (
+                self.client.table("reportes")
+                .select("id", count="exact")
+                .eq("contacto_id", contacto_id)
+                .in_("estado", ["pendiente", "revisado"])
+                .execute()
+            )
             return response.count or 0
         except Exception:
             return 0
@@ -485,8 +477,20 @@ class SupabaseService:
         if not self._check_client():
             return {"aprobados": 0, "pendientes": 0, "mostrar": False, "verificado": False}
         try:
-            aprobados = self.client.table("reportes").select("id", count="exact").eq("contacto_id", contacto_id).eq("estado", "revisado").execute()
-            pendientes = self.client.table("reportes").select("id", count="exact").eq("contacto_id", contacto_id).eq("estado", "pendiente").execute()
+            aprobados = (
+                self.client.table("reportes")
+                .select("id", count="exact")
+                .eq("contacto_id", contacto_id)
+                .eq("estado", "revisado")
+                .execute()
+            )
+            pendientes = (
+                self.client.table("reportes")
+                .select("id", count="exact")
+                .eq("contacto_id", contacto_id)
+                .eq("estado", "pendiente")
+                .execute()
+            )
             a = aprobados.count or 0
             p = pendientes.count or 0
             return {"aprobados": a, "pendientes": p, "mostrar": a >= 1 or p >= 3, "verificado": a >= 1}
@@ -498,7 +502,13 @@ class SupabaseService:
         if not self._check_client():
             return []
         try:
-            response = self.client.table("reportes").select("*, contactos(nombre, apellido, telefono)").eq("estado", "pendiente").order("fecha_reporte").execute()
+            response = (
+                self.client.table("reportes")
+                .select("*, contactos(nombre, apellido, telefono)")
+                .eq("estado", "pendiente")
+                .order("fecha_reporte")
+                .execute()
+            )
             return response.data
         except Exception as e:
             logger.error(f"Error obteniendo reportes: {e}")
@@ -509,7 +519,12 @@ class SupabaseService:
         if not self._check_client():
             return {"error": "BD no disponible"}
         try:
-            response = self.client.table("reportes").update({"estado": "resuelto"}).like("id", f"{reporte_id}%").execute()
+            response = (
+                self.client.table("reportes")
+                .update({"estado": "resuelto"})
+                .like("id", f"{reporte_id}%")
+                .execute()
+            )
             if not response.data:
                 return {"error": "Reporte no encontrado"}
             return {"data": "ok"}
@@ -538,23 +553,19 @@ class SupabaseService:
         """Crear un nuevo usuario admin (auth + tabla admins)"""
         if not self._check_client():
             return {"error": "BD no disponible"}
-
         try:
             auth_response = self.client.auth.admin.create_user({
                 "email": email,
                 "password": password,
                 "email_confirm": True,
             })
-
             user_id = auth_response.user.id
-
             self.client.table("admins").insert({
                 "user_id": user_id,
                 "email": email,
                 "nombre_admin": nombre,
                 "activo": True,
             }).execute()
-
             return {"data": {"email": email, "nombre": nombre}}
         except Exception as e:
             logger.error(f"Error creando admin: {e}")
@@ -564,7 +575,6 @@ class SupabaseService:
         """Obtener lista de admins"""
         if not self._check_client():
             return []
-
         try:
             response = self.client.table("admins").select("*").execute()
             return response.data
@@ -576,7 +586,6 @@ class SupabaseService:
         """Desactivar un admin por email"""
         if not self._check_client():
             return {"error": "BD no disponible"}
-
         try:
             response = (
                 self.client.table("admins")
@@ -584,10 +593,8 @@ class SupabaseService:
                 .eq("email", email)
                 .execute()
             )
-
             if not response.data:
                 return {"error": "Admin no encontrado"}
-
             return {"data": response.data[0]}
         except Exception as e:
             logger.error(f"Error desactivando admin: {e}")
