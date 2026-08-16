@@ -226,14 +226,26 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("🔒 Solo el administrador.")
             return
         accion = "aprobado" if data.startswith("aval_aprobar_") else "rechazado"
-        aval_id = data.replace("aval_aprobar_", "").replace("aval_rechazar_", "")
+        aval_id_prefix = data.replace("aval_aprobar_", "").replace("aval_rechazar_", "")
         try:
-            db.client.table("avales").update({
-                "estado": accion,
-                "revisado_por": str(query.from_user.id),
-                "fecha_revision": datetime.utcnow().isoformat(),
-            }).ilike("id", f"{aval_id}%").execute()
+            # Buscar el UUID completo por prefijo
+            resp = db.client.table("avales").select("id").ilike("id", f"{aval_id_prefix}%").limit(1).execute()
+            if not resp.data:
+                await query.edit_message_text("❌ Aval no encontrado.")
+                return
+            aval_uuid = resp.data[0]["id"]
+            # Usar RPC SECURITY DEFINER para bypasear RLS
+            result = db.client.rpc("resolver_aval", {
+                "p_aval_id":      aval_uuid,
+                "p_estado":       accion,
+                "p_revisado_por": str(query.from_user.id),
+            }).execute()
+            ok = result.data.get("ok") if result.data else False
             emoji = "✅" if accion == "aprobado" else "❌"
-            await query.edit_message_text(f"{emoji} Aval {accion}.")
+            if ok:
+                await query.edit_message_text(f"{emoji} Aval {accion}.")
+            else:
+                error = result.data.get("error", "desconocido") if result.data else "sin respuesta"
+                await query.edit_message_text(f"❌ Error: {error}")
         except Exception as e:
             await query.edit_message_text(f"❌ Error: {e}")

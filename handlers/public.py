@@ -52,6 +52,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Error procesando verificación. Intenta de nuevo.")
         return
 
+    # Invitación por referido (/start invitacion_GT-XXXXXXXX)
+    if context.args and len(context.args) > 0 and context.args[0].startswith("invitacion_"):
+        codigo_inv = context.args[0].replace("invitacion_", "")
+        try:
+            result = db.client.rpc("registrar_referido", {
+                "p_codigo":     codigo_inv,
+                "p_referido_id": str(user.id),
+            }).execute()
+            res = result.data if result.data else {}
+            ok    = res.get("ok", False)
+            error = res.get("error", "")
+            if ok:
+                logger.info(f"Referido registrado: {user.id} via código {codigo_inv}")
+            elif error == "YA_REFERIDO":
+                pass  # ya registrado, no interrumpir el flujo
+            elif error == "AUTOREFERIDO":
+                pass  # silencioso
+            # Continuar al mensaje de bienvenida normal
+        except Exception as e:
+            logger.error(f"Error registrando referido: {e}")
+        # No hacer return — mostrar bienvenida normalmente
+
     mensaje = (
         "👋 *Bienvenido a la Guía Telefónica ROOT*\n\n"
         "Puedes buscar escribiendo directamente en el chat:\n\n"
