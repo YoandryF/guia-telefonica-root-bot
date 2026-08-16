@@ -52,27 +52,42 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Error procesando verificación. Intenta de nuevo.")
         return
 
-    # Invitación por referido (/start invitacion_GT-XXXXXXXX)
+    # Invitación por referido (/start invitacion_GT_XXXXXXXX)
     if context.args and len(context.args) > 0 and context.args[0].startswith("invitacion_"):
-        codigo_inv = context.args[0].replace("invitacion_", "")
+        # El parámetro completo es "invitacion_GT_XXXXXXXX"
+        # Extraer todo lo que viene después de "invitacion_"
+        codigo_inv = context.args[0][len("invitacion_"):]
         try:
             result = db.client.rpc("registrar_referido", {
-                "p_codigo":     codigo_inv,
+                "p_codigo":      codigo_inv,
                 "p_referido_id": str(user.id),
             }).execute()
-            res = result.data if result.data else {}
+            res   = result.data if result.data else {}
             ok    = res.get("ok", False)
             error = res.get("error", "")
             if ok:
                 logger.info(f"Referido registrado: {user.id} via código {codigo_inv}")
+                # Notificar al usuario que llegó por invitación
+                await update.message.reply_text(
+                    "🎉 *¡Bienvenido!*\n\n"
+                    "Llegaste a través de una invitación.\n"
+                    "Tu registro como referido ha quedado guardado.\n\n"
+                    "⬇️ Descarga la app para acceder a todas las funciones:\n"
+                    "[Descargar APK](https://github.com/YoandryF/guia-telefonica-root-app/releases/latest)",
+                    parse_mode="Markdown",
+                    disable_web_page_preview=True,
+                )
+                return  # no mostrar bienvenida genérica encima
             elif error == "YA_REFERIDO":
-                pass  # ya registrado, no interrumpir el flujo
+                logger.info(f"Usuario {user.id} ya era referido")
             elif error == "AUTOREFERIDO":
-                pass  # silencioso
-            # Continuar al mensaje de bienvenida normal
+                logger.info(f"Usuario {user.id} intentó auto-referido")
+            elif error == "CODIGO_INVALIDO":
+                logger.warning(f"Código de invitación inválido: {codigo_inv}")
+            # Para los casos de error silencioso, continuar al mensaje normal
         except Exception as e:
             logger.error(f"Error registrando referido: {e}")
-        # No hacer return — mostrar bienvenida normalmente
+        # Continuar al mensaje de bienvenida normal
 
     mensaje = (
         "👋 *Bienvenido a la Guía Telefónica ROOT*\n\n"
