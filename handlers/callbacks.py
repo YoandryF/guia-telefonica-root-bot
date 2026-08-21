@@ -8,7 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from utils.helpers import db, es_admin, _cache_resultados, _mostrar_lista
-from utils.formatters import _formato_lista_compacta
+from utils.formatters import _formato_lista_compacta, formatear_contacto, teclado_contacto
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +144,54 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         cmd = "pendientes" if data == "cmd_pendientes" else "reportes"
         await query.edit_message_text(f"Usa /{cmd} para ver la lista.")
+        return
+
+    # Ver detalle de un contacto desde la lista (botón "Ver")
+    elif data.startswith("ver_"):
+        cid8 = data.replace("ver_", "")
+        contacto = db.buscar_por_id_o_telefono(cid8)
+        if not contacto:
+            await query.answer("❌ Contacto no encontrado", show_alert=True)
+            return
+        detalle = formatear_contacto(contacto, mostrar_id=admin, db=db)
+        markup  = teclado_contacto(contacto, es_admin=admin)
+        await query.edit_message_text(detalle, parse_mode="Markdown", reply_markup=markup)
+        return
+
+    # Reportar desde botón en detalle de contacto
+    elif data.startswith("reportar_"):
+        cid8 = data.replace("reportar_", "")
+        contacto = db.buscar_por_id_o_telefono(cid8)
+        if not contacto:
+            await query.answer("❌ No encontrado", show_alert=True)
+            return
+        context.user_data['reportar_id'] = contacto['id']
+        await query.edit_message_text(
+            f"⚠️ *Reportar contacto:* {contacto['nombre']} {contacto['apellido']}\n"
+            f"📱 `{contacto['telefono']}`\n\n"
+            "Escribe el motivo del reporte:",
+            parse_mode="Markdown",
+        )
+        return
+
+    # Avalar desde botón en detalle de contacto
+    elif data.startswith("avalar_"):
+        cid8 = data.replace("avalar_", "")
+        contacto = db.buscar_por_id_o_telefono(cid8)
+        if not contacto:
+            await query.answer("❌ No encontrado", show_alert=True)
+            return
+        try:
+            db.client.table("avales").insert({
+                "contacto_id": contacto["id"],
+                "avalado_por": str(query.from_user.id),
+            }).execute()
+            await query.answer("👍 Aval enviado — pendiente de revisión", show_alert=True)
+        except Exception as e:
+            if "duplicate" in str(e).lower():
+                await query.answer("⚠️ Ya avalaste este contacto", show_alert=True)
+            else:
+                await query.answer(f"❌ Error: {e}", show_alert=True)
         return
 
     elif data == "cancelar":

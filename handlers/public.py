@@ -7,7 +7,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from utils.helpers import db, ADMIN_CHAT_ID, es_admin, _cache_resultados, _mostrar_lista
-from utils.formatters import formatear_contacto, _formato_lista_compacta
+from utils.formatters import formatear_contacto, _formato_lista_compacta, teclado_contacto
 
 logger = logging.getLogger(__name__)
 
@@ -337,11 +337,8 @@ async def handle_texto_libre(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if contacto:
             admin = es_admin(update.effective_user.id)
             detalle = formatear_contacto(contacto, mostrar_id=admin)
-            if admin:
-                keyboard = [[InlineKeyboardButton("🗑 Eliminar", callback_data=f"confirmar_del_{contacto['id'][:8]}")]]
-                await msg.edit_text(detalle, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-            else:
-                await msg.edit_text(detalle, parse_mode="Markdown")
+            markup  = teclado_contacto(contacto, es_admin=admin)
+            await msg.edit_text(detalle, parse_mode="Markdown", reply_markup=markup)
         else:
             await msg.edit_text(
                 f"❌ No encontré ningún contacto con `{texto}`\n\n"
