@@ -97,24 +97,22 @@ class SupabaseService:
             return []
 
     def registrar_contacto(self, nombre: str, apellido: str, telefono: str,
-                           direccion: str = None, ci: str = None,
+                           provincia: str = None, municipio: str = None,
                            creado_por: str = None, creado_desde: str = "telegram") -> dict:
         """Registrar nuevo contacto (estado pendiente)"""
         if not self._check_client():
             return {"error": "BD no disponible"}
         try:
             data = {
-                "nombre": nombre,
-                "apellido": apellido,
-                "telefono": telefono,
-                "estado": "pendiente",
-                "creado_por": creado_por,
-                "creado_desde": creado_desde,
+                "nombre":        nombre,
+                "apellido":      apellido,
+                "telefono":      telefono,
+                "estado":        "pendiente",
+                "creado_por":    creado_por,
+                "creado_desde":  creado_desde,
             }
-            if direccion:
-                data["direccion"] = direccion
-            if ci:
-                data["ci"] = ci
+            if provincia: data["provincia"] = provincia
+            if municipio: data["municipio"] = municipio
 
             response = self.client.table("contactos").insert(data).execute()
             return {"data": response.data[0] if response.data else None}

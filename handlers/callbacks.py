@@ -7,7 +7,7 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from utils.helpers import db, es_admin, _cache_resultados, _mostrar_lista
+from utils.helpers import db, es_admin, _mostrar_lista, cache_resultados_get, cache_resultados_set
 from utils.formatters import _formato_lista_compacta, formatear_contacto, teclado_contacto
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         partes = data.split("_", 2)
         pagina = int(partes[2]) if len(partes) > 2 and partes[2].isdigit() else 1
         chat_id = str(query.from_user.id)
-        cache = _cache_resultados.get(chat_id)
+        cache = cache_resultados_get(chat_id)
 
         if cache and cache.get('tipo') == 'listar':
             # Paginación real desde Supabase — total ya en cache, no hace segunda query
@@ -48,7 +48,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Paginación lista negra
         pagina = int(data.replace("ln_", "")) if data.replace("ln_", "").isdigit() else 1
         chat_id = str(query.from_user.id)
-        cache = _cache_resultados.get(chat_id)
+        cache = cache_resultados_get(chat_id)
         total = cache.get('total', 0) if cache and cache.get('tipo') == 'listanegra' else db.contar_contactos_con_reportes()
         por_pagina = 10
         offset = (pagina - 1) * por_pagina
@@ -84,7 +84,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("📭 No hay contactos aprobados aún.")
             return
         chat_id = str(query.from_user.id)
-        _cache_resultados[chat_id] = {'tipo': 'listar', 'total': total, 'por_pagina': por_pagina}
+        cache_resultados_set(chat_id, {'tipo': 'listar', 'total': total, 'por_pagina': por_pagina})
         total_pags = max(1, (total + por_pagina - 1) // por_pagina)
         texto, markup = _formato_lista_compacta(contactos, 1, total, 1, total_pags, '')
         await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=markup)
@@ -261,13 +261,58 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['cfg_edit_clave'] = clave
         await query.edit_message_text(f"✏️ Escribe el nuevo valor para `{clave}`:", parse_mode="Markdown")
 
-    elif data == "pend_prev":
-        context.user_data['pend_pagina'] = max(0, context.user_data.get('pend_pagina', 0) - 1)
-        await query.edit_message_text(f"⬅️ Usa /pendientes para ver página {context.user_data['pend_pagina']+1}")
+    elif data.startswith("pend_pg_"):
+        # Paginación de pendientes — navegar a página específica
+        if not admin:
+            await query.answer("🔒 Solo admins", show_alert=True)
+            return
+        nueva_pag = int(data.replace("pend_pg_", ""))
+        context.user_data['pend_pagina'] = nueva_pag
+        # Reconstruir la lista desde cache
+        from utils.helpers import cache_resultados_get
+        cached = cache_resultados_get(str(query.from_user.id) + '_pend')
+        if not cached:
+            await query.answer("⚠️ Sesión expirada. Usa /pendientes de nuevo.", show_alert=True)
+            return
+        contactos = cached['contactos']
+        filtro    = cached.get('filtro')
+        total     = len(contactos)
+        por_pag   = 5
+        pagina    = max(0, min(nueva_pag, (total-1)//por_pag))
+        inicio    = pagina * por_pag
+        lote      = contactos[inicio:inicio + por_pag]
 
-    elif data == "pend_next":
-        context.user_data['pend_pagina'] = context.user_data.get('pend_pagina', 0) + 1
-        await query.edit_message_text(f"➡️ Usa /pendientes para ver página {context.user_data['pend_pagina']+1}")
+        texto = f"⏳ *Pendientes ({inicio+1}–{min(inicio+por_pag, total)} de {total})*\n"
+        if filtro:
+            texto += f"_Filtro: \"{filtro}\"_\n"
+        texto += "\n"
+        botones = []
+        for c in lote:
+            nombre = f"{c['nombre']} {c['apellido']}"
+            prov   = c.get('provincia') or ''
+            mun    = c.get('municipio') or ''
+            ubi    = f" — {mun}, {prov}" if mun else (f" — {prov}" if prov else "")
+            texto += f"👤 *{nombre}*\n📱 `{c['telefono']}`{ubi}\n\n"
+            cid8   = c['id'][:8]
+            botones.append([
+                InlineKeyboardButton(f"✅ {c['telefono']}", callback_data=f"aprobar_{cid8}"),
+                InlineKeyboardButton("❌",                  callback_data=f"rechazar_{cid8}"),
+                InlineKeyboardButton("🗑",                  callback_data=f"confirmar_del_{cid8}"),
+            ])
+        nav = []
+        if pagina > 0:
+            nav.append(InlineKeyboardButton("⬅️ Anterior", callback_data=f"pend_pg_{pagina-1}"))
+        if inicio + por_pag < total:
+            nav.append(InlineKeyboardButton("Siguiente ➡️", callback_data=f"pend_pg_{pagina+1}"))
+        if nav:
+            botones.append(nav)
+        await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(botones))
+        return
+
+    elif data in ("pend_prev", "pend_next"):
+        # Legacy — ya no se usa, ignorar silenciosamente
+        await query.answer("Usa /pendientes para navegar.", show_alert=False)
+        return
 
     elif data.startswith("aval_aprobar_") or data.startswith("aval_rechazar_"):
         if not admin:

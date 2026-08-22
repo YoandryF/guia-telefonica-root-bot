@@ -3,6 +3,7 @@ Shared state and helper functions for the bot.
 """
 
 import os
+import time
 import logging
 from dotenv import load_dotenv
 from supabase_service import SupabaseService
@@ -10,53 +11,87 @@ from utils.formatters import _formato_lista_compacta
 
 load_dotenv()
 
-# Logging
-logger = logging.getLogger(__name__)
-
-# Shared configuration
+logger       = logging.getLogger(__name__)
 ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID")
+db            = SupabaseService()
 
-# Shared Supabase service instance
-db = SupabaseService()
-
-# Cache simple de resultados de búsqueda por chat_id
+# Cache de resultados de búsqueda: {chat_id: {'data': ..., 'ts': float}}
 _cache_resultados: dict = {}
+_CACHE_TTL = 600  # 10 minutos
+
+# Cache de admins: {chat_id_str: (es_admin: bool, expires: float)}
+_admin_cache: dict = {}
+_ADMIN_TTL  = 300  # 5 minutos
 
 
 def es_admin(chat_id: int) -> bool:
-    """Verificar si un chat_id es administrador o owner"""
-    if str(chat_id) == str(ADMIN_CHAT_ID):
+    """Verificar si un chat_id es admin. Resultado cacheado 5 minutos."""
+    cid = str(chat_id)
+    # Owner siempre es admin sin query
+    if cid == str(ADMIN_CHAT_ID):
         return True
+    ahora = time.time()
+    cached = _admin_cache.get(cid)
+    if cached and ahora < cached[1]:
+        return cached[0]
+    # Query a Supabase solo si el cache expiró
     try:
-        response = db.client.table("admins").select("id").eq("chat_id_telegram", str(chat_id)).eq("activo", True).execute()
-        return len(response.data) > 0
+        resp = db.client.table("admins").select("id").eq("chat_id_telegram", cid).eq("activo", True).execute()
+        resultado = len(resp.data) > 0
     except Exception:
-        return False
+        resultado = False
+    _admin_cache[cid] = (resultado, ahora + _ADMIN_TTL)
+    return resultado
+
+
+def invalidar_cache_admin(chat_id: int) -> None:
+    """Llamar cuando se agrega/elimina un admin para forzar revalidación."""
+    _admin_cache.pop(str(chat_id), None)
 
 
 def es_owner(chat_id: int) -> bool:
-    """Verificar si es el owner (solo uno)"""
     return str(chat_id) == str(ADMIN_CHAT_ID)
 
 
+def cache_resultados_get(chat_id: str) -> dict | None:
+    """Obtener cache de búsqueda, None si expiró."""
+    entry = _cache_resultados.get(chat_id)
+    if not entry:
+        return None
+    if time.time() > entry['ts'] + _CACHE_TTL:
+        del _cache_resultados[chat_id]
+        return None
+    return entry['data']
+
+
+def cache_resultados_set(chat_id: str, data: dict) -> None:
+    """Guardar resultado en cache con timestamp."""
+    # Limpiar entradas viejas si hay demasiadas (> 500)
+    if len(_cache_resultados) > 500:
+        ahora = time.time()
+        expirados = [k for k, v in _cache_resultados.items() if ahora > v['ts'] + _CACHE_TTL]
+        for k in expirados:
+            del _cache_resultados[k]
+    _cache_resultados[chat_id] = {'data': data, 'ts': time.time()}
+
+
 def paginar_contactos(contactos: list, pagina: int, por_pagina: int = 10) -> tuple:
-    """Paginar lista de contactos"""
     total_paginas = max(1, (len(contactos) + por_pagina - 1) // por_pagina)
     pagina = max(1, min(pagina, total_paginas))
     inicio = (pagina - 1) * por_pagina
-    fin = inicio + por_pagina
+    fin    = inicio + por_pagina
     return contactos[inicio:fin], pagina, total_paginas
 
 
 async def _mostrar_lista(update_or_query, context, contactos: list, pagina: int, query_texto: str = "", editar: bool = False):
     """Mostrar lista paginada. Puede enviar nuevo mensaje o editar existente."""
-    por_pagina = 10
-    total = len(contactos)
-    total_pags = max(1, (total + por_pagina - 1) // por_pagina)
-    pagina = max(1, min(pagina, total_pags))
-    inicio = (pagina - 1) * por_pagina
-    items = contactos[inicio:inicio + por_pagina]
-    inicio_num = inicio + 1
+    por_pagina  = 10
+    total       = len(contactos)
+    total_pags  = max(1, (total + por_pagina - 1) // por_pagina)
+    pagina      = max(1, min(pagina, total_pags))
+    inicio      = (pagina - 1) * por_pagina
+    items       = contactos[inicio:inicio + por_pagina]
+    inicio_num  = inicio + 1
 
     texto, markup = _formato_lista_compacta(items, inicio_num, total, pagina, total_pags, query_texto)
 

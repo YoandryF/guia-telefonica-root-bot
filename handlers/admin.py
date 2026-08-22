@@ -17,65 +17,73 @@ logger = logging.getLogger(__name__)
 
 
 async def pendientes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver contactos pendientes con filtro y paginación (botones)"""
+    """Lista compacta de pendientes con botones por contacto — un solo mensaje."""
     if not es_admin(update.effective_user.id):
-        await update.message.reply_text("\U0001f512 Solo el administrador puede usar este comando.")
+        await update.message.reply_text("🔒 Solo el administrador.")
         return
 
-    filtro = " ".join(context.args) if context.args else None
+    filtro    = " ".join(context.args).lower() if context.args else None
     contactos = db.get_contactos_pendientes()
 
     if filtro:
-        f = filtro.lower()
-        contactos = [c for c in contactos if f in c.get('nombre','').lower() or f in c.get('apellido','').lower() or f in c.get('telefono','') or f in (c.get('ci') or '')]
+        contactos = [c for c in contactos if
+                     filtro in (c.get('nombre','') or '').lower() or
+                     filtro in (c.get('apellido','') or '').lower() or
+                     filtro in (c.get('telefono','') or '')]
 
     if not contactos:
-        msg = "\u2705 No hay contactos pendientes"
-        if filtro:
-            msg += f" que coincidan con \"{filtro}\""
-        await update.message.reply_text(msg)
+        await update.message.reply_text(
+            "✅ No hay contactos pendientes" + (f' con "{filtro}"' if filtro else "")
+        )
         return
 
-    total = len(contactos)
-    pagina = context.user_data.get('pend_pagina', 0)
-    por_pagina = 5
-    inicio = pagina * por_pagina
-    fin = min(inicio + por_pagina, total)
-    lote = contactos[inicio:fin]
+    total     = len(contactos)
+    por_pag   = 5
+    pagina    = max(0, context.user_data.get('pend_pagina', 0))
+    max_pag   = (total - 1) // por_pag
+    pagina    = min(pagina, max_pag)
+    inicio    = pagina * por_pag
+    lote      = contactos[inicio:inicio + por_pag]
 
-    header = f"\u23f3 *Pendientes ({inicio+1}-{fin} de {total})*"
+    # Guardar en context para paginación
+    from utils.helpers import cache_resultados_set
+    cache_resultados_set(str(update.effective_user.id) + '_pend', {
+        'contactos': contactos, 'filtro': filtro
+    })
+    context.user_data['pend_pagina'] = pagina
+
+    texto = f"⏳ *Pendientes ({inicio+1}–{min(inicio+por_pag, total)} de {total})*\n"
     if filtro:
-        header += f" — filtro: \"{filtro}\""
-    await update.message.reply_text(header, parse_mode="Markdown")
+        texto += f"_Filtro: \"{filtro}\"_\n"
+    texto += "\n"
 
+    botones = []
     for c in lote:
-        texto = (
-            f"\U0001f464 *{c['nombre']} {c['apellido']}*\n"
-            f"\U0001f4f1 `{c['telefono']}`\n"
-        )
-        if c.get('direccion'):
-            texto += f"\U0001f4cd {c['direccion']}\n"
-        if c.get('ci'):
-            texto += f"\U0001f194 CI: {c['ci']}\n"
+        nombre = f"{c['nombre']} {c['apellido']}"
+        prov   = c.get('provincia') or ''
+        mun    = c.get('municipio') or ''
+        ubi    = f" — {mun}, {prov}" if mun else (f" — {prov}" if prov else "")
+        texto += f"👤 *{nombre}*\n📱 `{c['telefono']}`{ubi}\n\n"
+        cid8   = c['id'][:8]
+        botones.append([
+            InlineKeyboardButton(f"✅ {c['telefono']}", callback_data=f"aprobar_{cid8}"),
+            InlineKeyboardButton("❌",                  callback_data=f"rechazar_{cid8}"),
+            InlineKeyboardButton("🗑",                  callback_data=f"confirmar_del_{cid8}"),
+        ])
 
-        keyboard = [
-            [
-                InlineKeyboardButton("\u2705 Aprobar", callback_data=f"aprobar_{c['id'][:8]}"),
-                InlineKeyboardButton("\u274c Rechazar", callback_data=f"rechazar_{c['id'][:8]}"),
-            ],
-            [
-                InlineKeyboardButton("\U0001f5d1 Eliminar", callback_data=f"eliminar_{c['id'][:8]}"),
-            ],
-        ]
-        await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
+    # Navegación
     nav = []
-    if inicio > 0:
-        nav.append(InlineKeyboardButton("\u2b05 Anterior", callback_data="pend_prev"))
-    if fin < total:
-        nav.append(InlineKeyboardButton("Siguiente \u27a1", callback_data="pend_next"))
+    if pagina > 0:
+        nav.append(InlineKeyboardButton("⬅️ Anterior", callback_data=f"pend_pg_{pagina-1}"))
+    if inicio + por_pag < total:
+        nav.append(InlineKeyboardButton("Siguiente ➡️", callback_data=f"pend_pg_{pagina+1}"))
     if nav:
-        await update.message.reply_text(f"P\u00e1gina {pagina+1}/{(total+por_pagina-1)//por_pagina}", reply_markup=InlineKeyboardMarkup([nav]))
+        botones.append(nav)
+
+    await update.message.reply_text(
+        texto, parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(botones),
+    )
 
 
 async def aprobar(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -6,7 +6,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from utils.helpers import db, ADMIN_CHAT_ID, es_admin, _cache_resultados, _mostrar_lista
+from utils.helpers import db, ADMIN_CHAT_ID, es_admin, _mostrar_lista, cache_resultados_get, cache_resultados_set
 from utils.formatters import formatear_contacto, _formato_lista_compacta, teclado_contacto
 
 logger = logging.getLogger(__name__)
@@ -190,7 +190,7 @@ async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_pags = max(1, (total + por_pagina - 1) // por_pagina)
     inicio_num = offset + 1
     chat_id = str(update.effective_user.id)
-    _cache_resultados[chat_id] = {'tipo': 'listar', 'total': total, 'por_pagina': por_pagina}
+    cache_resultados_set(chat_id, {'tipo': 'listar', 'total': total, 'por_pagina': por_pagina})
 
     texto, markup = _formato_lista_compacta(contactos, inicio_num, total, pagina, total_pags, '')
     await msg.edit_text(texto, parse_mode="Markdown", reply_markup=markup)
@@ -217,7 +217,7 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     chat_id = str(update.effective_user.id)
-    _cache_resultados[chat_id] = {'contactos': contactos, 'query': query}
+    cache_resultados_set(chat_id, {'contactos': contactos, 'query': query})
 
     total = len(contactos)
     total_pags = max(1, (total + 9) // 10)
@@ -296,7 +296,7 @@ async def listanegra(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Guardar en cache para paginación por botones
     chat_id = str(update.effective_user.id)
-    _cache_resultados[chat_id] = {'tipo': 'listanegra', 'total': total, 'por_pagina': por_pagina}
+    cache_resultados_set(chat_id, {'tipo': 'listanegra', 'total': total, 'por_pagina': por_pagina})
 
     texto = f"⚠️ *Lista Negra — {total} contactos*\n\n"
     for i, c in enumerate(reportados, inicio_num):
@@ -354,7 +354,7 @@ async def handle_texto_libre(update: Update, context: ContextTypes.DEFAULT_TYPE)
         contactos = db.buscar_contactos(texto)
         if contactos:
             chat_id = str(update.effective_user.id)
-            _cache_resultados[chat_id] = {'contactos': contactos, 'query': texto}
+            cache_resultados_set(chat_id, {'contactos': contactos, 'query': texto})
             total = len(contactos)
             total_pags = max(1, (total + 9) // 10)
             t, markup = _formato_lista_compacta(contactos[:10], 1, total, 1, total_pags, texto)
