@@ -38,12 +38,12 @@ async def registrar_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if resultado.get("error"):
         await update.message.reply_text(f"❌ Error: {resultado['error']}")
     else:
+        # No mostrar la password en el chat — riesgo de seguridad
         await update.message.reply_text(
             f"✅ *Admin registrado exitosamente*\n\n"
             f"👤 {nombre}\n"
-            f"📧 {email}\n"
-            f"🔑 Password: `{password}`\n\n"
-            f"Ya puede iniciar sesión en la app.",
+            f"📧 {email}\n\n"
+            f"Ya puede iniciar sesión en la app con la contraseña proporcionada.",
             parse_mode="Markdown",
         )
 

@@ -85,11 +85,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(botones) if botones else None)
         return
 
-    elif data == "cmd_listar":
-        # Eliminado — la lista ya no está disponible como función pública
-        await query.answer("Escribe directamente para buscar.", show_alert=False)
-        return
-
     elif data == "cmd_agregar":
         await query.edit_message_text(
             "✏️ *Registrar un nuevo contacto*\n\n"

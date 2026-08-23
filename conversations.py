@@ -264,8 +264,8 @@ async def reportar_contacto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return REP_CONTACTO
     context.user_data['contacto_id']     = contacto['id']
     context.user_data['contacto_nombre'] = f"{contacto['nombre']} {contacto['apellido']}"
-    # Mostrar info del contacto + cuántos reportes tiene
-    n_rep = contacto.get('score_riesgo', 0) or 0
+    # Mostrar cuántos reportes tiene — usar conteo real, no score_riesgo
+    n_rep = db.get_conteo_reportes(contacto['id'])
     badge = f"⚠️ Ya tiene {n_rep} reporte(s)\n" if n_rep else ""
     await update.message.reply_text(
         f"👤 *{contacto['nombre']} {contacto['apellido']}* (`{contacto['telefono']}`)\n{badge}\n"
