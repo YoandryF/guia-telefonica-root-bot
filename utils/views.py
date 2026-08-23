@@ -324,28 +324,27 @@ async def mostrar_config(message: Message, pagina: int = 0,
     inicio     = pagina * POR_PAG
     lote       = configs[inicio:inicio + POR_PAG]
 
-    # ── Texto: lista numerada ─────────────────────────────────────────────────
+    # ── Texto: lista numerada (texto plano — valores de BD sin escapar) ─────────
     sel_cfg = None
     if seleccion is not None and 0 <= seleccion < len(lote):
         sel_cfg = lote[seleccion]
 
-    texto  = f"⚙️ *Configuración del sistema*\n"
-    texto += f"_Página {pagina+1} de {total_pags} — {total} parámetros_\n\n"
+    texto  = f"⚙️ Configuración del sistema\n"
+    texto += f"Página {pagina+1} de {total_pags} — {total} parámetros\n\n"
 
     for i, c in enumerate(lote):
         n     = i + 1
         clave = c['clave']
         valor = c.get('valor', '—')
-        # Resaltar el seleccionado
         if sel_cfg and c['clave'] == sel_cfg['clave']:
-            texto += f"▶️ *{n}\\. {clave}*\n"
-            texto += f"    Valor: `{valor}`\n"
+            texto += f"▶ {n}. {clave}\n"
+            texto += f"   Valor: {valor}\n"
             desc = c.get('descripcion') or ''
             if desc:
-                texto += f"    _{desc}_\n"
+                texto += f"   {desc}\n"
             texto += "\n"
         else:
-            texto += f"*{n}\\.* `{clave}` = `{valor}`\n"
+            texto += f"{n}. {clave} = {valor}\n"
 
     # ── Botones: números 1-N para seleccionar ────────────────────────────────
     botones = []
@@ -389,7 +388,7 @@ async def mostrar_config(message: Message, pagina: int = 0,
     botones.append(_btn_inicio())
 
     await _enviar(message, texto, InlineKeyboardMarkup(botones),
-                  parse_mode="MarkdownV2", editar=editar)
+                  parse_mode=None, editar=editar)
 
 
 
