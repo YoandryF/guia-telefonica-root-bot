@@ -75,7 +75,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Bienvenida principal
     from utils.views import mostrar_start
-    await mostrar_start(update.message, user.id, user.first_name)
+    await mostrar_start(update.message, user.id, user.first_name, editar=False)
 
 
 async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):

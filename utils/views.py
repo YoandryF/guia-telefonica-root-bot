@@ -1,33 +1,133 @@
 """
 views.py — Capa de presentación compartida.
 
-Contiene funciones que construyen y envían vistas completas
-(texto + teclado + lógica de paginación) sin depender de ningún handler.
+Construye y envía vistas completas (texto + teclado + paginación).
+No depende de handlers. Flujo de dependencias:
+  handlers → views → formatters / helpers / db
 
-Principio: los handlers reciben el evento y delegan aquí.
-Esta capa NO conoce a los handlers — solo conoce db, formatters y helpers.
+Navegación inline: todas las vistas incluyen botón 🏠 Inicio
+para que el usuario navegue sin salir del mensaje original.
 """
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from telegram.ext import ContextTypes
 
 from utils.helpers import db, cache_resultados_set
-from utils.formatters import formatear_contacto, teclado_contacto, _formato_lista_compacta
+from utils.formatters import formatear_contacto, teclado_contacto, _formato_lista_compacta, _esc
+
+
+# ── Helpers de navegación ─────────────────────────────────────────────────────
+
+def _btn_inicio() -> list:
+    """Fila con botón de volver al inicio — se añade al final de toda vista."""
+    return [InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio")]
+
+
+async def _enviar(message: Message, texto: str, markup: InlineKeyboardMarkup,
+                  parse_mode: str = "Markdown", editar: bool = False) -> None:
+    """Enviar o editar un mensaje según el contexto."""
+    if editar:
+        await message.edit_text(texto, parse_mode=parse_mode, reply_markup=markup)
+    else:
+        await message.reply_text(texto, parse_mode=parse_mode, reply_markup=markup)
+
+
+# ── Start / Inicio ────────────────────────────────────────────────────────────
+
+async def mostrar_start(message: Message, user_id: int,
+                        primer_nombre: str, editar: bool = False) -> None:
+    """Vista principal — botones según rol del usuario."""
+    from utils.helpers import es_admin as _es_admin, es_owner as _es_owner
+
+    nombre  = primer_nombre or "amigo"
+    mensaje = (
+        f"👋 Hola, *{_esc(nombre)}*\\! Bienvenido a la *Guía Telefónica Colaborativa*\\.\n\n"
+        "Escribe directamente para buscar:\n\n"
+        "> 📱 Por número: `55551234`\n"
+        "> 👤 Por nombre: `Juan Pérez`\n"
+        "> 🔢 Varios a la vez: `55551234 56789012`\n\n"
+        "📲 [Descargar app Android](https://github\\.com/YoandryF/guia-telefonica-root-app/releases/latest)\n\n"
+        "_Base de datos colaborativa — tu aporte importa_ 🤝"
+    )
+
+    keyboard = [
+        [
+            InlineKeyboardButton("🔍 Buscar",           switch_inline_query_current_chat=""),
+            InlineKeyboardButton("➕ Agregar contacto", callback_data="cmd_agregar"),
+        ],
+        [
+            InlineKeyboardButton("📌 Mis reportes", callback_data="cmd_misreportes"),
+            InlineKeyboardButton("❓ Ayuda",         callback_data="cmd_ayuda"),
+        ],
+    ]
+
+    if _es_admin(user_id):
+        keyboard.append([
+            InlineKeyboardButton("⏳ Pendientes",   callback_data="cmd_pendientes"),
+            InlineKeyboardButton("🚨 Reportes",     callback_data="cmd_reportes"),
+            InlineKeyboardButton("📊 Estadísticas", callback_data="cmd_estadisticas"),
+        ])
+
+    if _es_owner(user_id):
+        keyboard.append([
+            InlineKeyboardButton("👑 Admins",   callback_data="cmd_admins"),
+            InlineKeyboardButton("⚙️ Config",  callback_data="cmd_config"),
+            InlineKeyboardButton("📤 Exportar", callback_data="cmd_exportar"),
+        ])
+
+    markup = InlineKeyboardMarkup(keyboard)
+    if editar:
+        await message.edit_text(mensaje, parse_mode="MarkdownV2",
+                                reply_markup=markup, disable_web_page_preview=True)
+    else:
+        await message.reply_text(mensaje, parse_mode="MarkdownV2",
+                                 reply_markup=markup, disable_web_page_preview=True)
+
+
+# ── Ayuda ─────────────────────────────────────────────────────────────────────
+
+async def mostrar_ayuda(message: Message, user_id: int, editar: bool = False) -> None:
+    """Vista de ayuda con sección admin si corresponde."""
+    from utils.helpers import es_admin as _es_admin
+
+    texto = (
+        "📖 *Guía de uso*\n\n"
+        "*Formas de buscar:*\n\n"
+        "> 1\\. Por número: `55551234`\n"
+        "> 2\\. Por nombre: `Juan Pérez`\n"
+        "> 3\\. Varios a la vez: `55551234 56789012`\n\n"
+        "*Notas:*\n"
+        "• No importan mayúsculas ni minúsculas\n"
+        "• Los espacios en los números se ignoran\n\n"
+        "*Para agregar:* toca ➕ o escribe /agregar\n"
+        "*Para reportar:* busca el número y toca ⚠️\n"
+    )
+
+    if _es_admin(user_id):
+        texto += (
+            "\n*Comandos admin:*\n"
+            "> /pendientes — aprobar contactos\n"
+            "> /reportes — gestionar reportes\n"
+            "> /avales — avales pendientes\n"
+            "> /reclamos — reclamos pendientes\n"
+            "> /estadisticas — ver estadísticas\n"
+            "> /exportar csv — exportar BD\n"
+            "> /banear — banear reportador\n"
+        )
+
+    markup = InlineKeyboardMarkup([_btn_inicio()])
+    await _enviar(message, texto, markup, parse_mode="MarkdownV2", editar=editar)
 
 
 # ── Contacto ──────────────────────────────────────────────────────────────────
 
-async def mostrar_contacto(message: Message, contacto: dict, es_admin: bool = False,
-                           editar: bool = False) -> None:
-    """Muestra la ficha completa de un contacto con sus botones de acción.
-    Resuelve info_reportes aquí para que formatear_contacto sea puro (sin BD)."""
+async def mostrar_contacto(message: Message, contacto: dict,
+                           es_admin: bool = False, editar: bool = False) -> None:
+    """Ficha completa de un contacto con botones de acción."""
     info_reportes = db.get_info_reportes(contacto['id'])
     texto  = formatear_contacto(contacto, info_reportes=info_reportes, mostrar_id=es_admin)
     markup = teclado_contacto(contacto, es_admin=es_admin)
-    if editar:
-        await message.edit_text(texto, parse_mode="MarkdownV2", reply_markup=markup)
-    else:
-        await message.reply_text(texto, parse_mode="MarkdownV2", reply_markup=markup)
+    await _enviar(message, texto, markup, parse_mode="MarkdownV2", editar=editar)
 
 
 # ── Pendientes ────────────────────────────────────────────────────────────────
@@ -35,12 +135,12 @@ async def mostrar_contacto(message: Message, contacto: dict, es_admin: bool = Fa
 async def mostrar_pendientes(message: Message, context: ContextTypes.DEFAULT_TYPE,
                              user_id: int, pagina: int = 0,
                              editar: bool = False) -> None:
-    """Lista compacta de contactos pendientes con botones de aprobación."""
+    """Lista de contactos pendientes con botones de aprobación y navegación."""
     contactos = db.get_contactos_pendientes()
 
     if not contactos:
-        txt = "✅ No hay contactos pendientes."
-        await (message.edit_text(txt) if editar else message.reply_text(txt))
+        markup = InlineKeyboardMarkup([_btn_inicio()])
+        await _enviar(message, "✅ No hay contactos pendientes.", markup, editar=editar)
         return
 
     POR_PAG = 5
@@ -49,7 +149,7 @@ async def mostrar_pendientes(message: Message, context: ContextTypes.DEFAULT_TYP
     inicio  = pagina * POR_PAG
     lote    = contactos[inicio:inicio + POR_PAG]
 
-    cache_resultados_set(str(user_id) + '_pend', {'contactos': contactos, 'filtro': None})
+    cache_resultados_set(str(user_id) + '_pend', {'contactos': contactos})
     context.user_data['pend_pagina'] = pagina
 
     texto = f"⏳ *Pendientes ({inicio+1}–{min(inicio+POR_PAG, total)} de {total})*\n\n"
@@ -75,12 +175,9 @@ async def mostrar_pendientes(message: Message, context: ContextTypes.DEFAULT_TYP
         nav.append(InlineKeyboardButton("➡️", callback_data=f"pend_pg_{pagina+1}"))
     if nav:
         botones.append(nav)
+    botones.append(_btn_inicio())
 
-    markup = InlineKeyboardMarkup(botones)
-    if editar:
-        await message.edit_text(texto, parse_mode="Markdown", reply_markup=markup)
-    else:
-        await message.reply_text(texto, parse_mode="Markdown", reply_markup=markup)
+    await _enviar(message, texto, InlineKeyboardMarkup(botones), editar=editar)
 
 
 # ── Reportes ──────────────────────────────────────────────────────────────────
@@ -90,8 +187,8 @@ async def mostrar_reportes(message: Message, editar: bool = False) -> None:
     lista = db.get_reportes_pendientes()
 
     if not lista:
-        txt = "✅ No hay reportes pendientes."
-        await (message.edit_text(txt) if editar else message.reply_text(txt))
+        markup = InlineKeyboardMarkup([_btn_inicio()])
+        await _enviar(message, "✅ No hay reportes pendientes.", markup, editar=editar)
         return
 
     texto   = f"🚨 *Reportes pendientes ({len(lista)}):*\n\n"
@@ -109,108 +206,88 @@ async def mostrar_reportes(message: Message, editar: bool = False) -> None:
         )
         cid8 = r['id'][:8]
         botones.append([
-            InlineKeyboardButton("✅ Verificar",    callback_data=f"verificar_rep_{cid8}"),
-            InlineKeyboardButton("🗑 Desestimar",   callback_data=f"desestimar_rep_{cid8}"),
+            InlineKeyboardButton("✅ Verificar",  callback_data=f"verificar_rep_{cid8}"),
+            InlineKeyboardButton("🗑 Desestimar", callback_data=f"desestimar_rep_{cid8}"),
         ])
 
-    markup = InlineKeyboardMarkup(botones) if botones else None
-    if editar:
-        await message.edit_text(texto, parse_mode="Markdown", reply_markup=markup)
-    else:
-        await message.reply_text(texto, parse_mode="Markdown", reply_markup=markup)
+    botones.append(_btn_inicio())
+    await _enviar(message, texto, InlineKeyboardMarkup(botones), editar=editar)
 
 
-# ── Búsqueda ──────────────────────────────────────────────────────────────────
+# ── Estadísticas ──────────────────────────────────────────────────────────────
 
-async def mostrar_start(message, user_id: int, primer_nombre: str) -> None:
-    """Vista del mensaje de bienvenida — botones según rol del usuario."""
-    from utils.helpers import es_admin as _es_admin, es_owner as _es_owner
-    from utils.formatters import _esc
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
-    nombre  = primer_nombre or "amigo"
-    mensaje = (
-        f"👋 Hola, *{_esc(nombre)}*\\! Bienvenido a la *Guía Telefónica Colaborativa*\\.\n\n"
-        "Escribe directamente para buscar:\n\n"
-        "> 📱 Por número: `55551234`\n"
-        "> 👤 Por nombre: `Juan Pérez`\n"
-        "> 🔢 Varios a la vez: `55551234 56789012`\n\n"
-        "📲 [Descargar app Android](https://github.com/YoandryF/guia-telefonica-root-app/releases/latest)\n\n"
-        "_Base de datos colaborativa — tu aporte importa_ 🤝"
+async def mostrar_estadisticas(message: Message, editar: bool = False) -> None:
+    """Vista de estadísticas generales."""
+    stats = db.get_estadisticas()
+    texto = (
+        "📊 *Estadísticas*\n\n"
+        f"✅ Aprobados:         {stats.get('aprobados', 0):,}\n"
+        f"⏳ Pendientes:        {stats.get('pendientes', 0):,}\n"
+        f"❌ Rechazados:        {stats.get('rechazados', 0):,}\n"
+        f"📋 Total contactos:   {stats.get('total', 0):,}\n"
+        f"👥 Usuarios Telegram: {stats.get('usuarios_telegram', 0):,}\n"
     )
-
-    # Botones base — todos los usuarios
-    keyboard = [
-        [
-            InlineKeyboardButton("🔍 Buscar",           switch_inline_query_current_chat=""),
-            InlineKeyboardButton("➕ Agregar contacto", callback_data="cmd_agregar"),
-        ],
-        [
-            InlineKeyboardButton("📌 Mis reportes", callback_data="cmd_misreportes"),
-            InlineKeyboardButton("❓ Ayuda",         callback_data="cmd_ayuda"),
-        ],
-    ]
-
-    # Fila admin
-    if _es_admin(user_id):
-        keyboard.append([
-            InlineKeyboardButton("⏳ Pendientes",   callback_data="cmd_pendientes"),
-            InlineKeyboardButton("🚨 Reportes",     callback_data="cmd_reportes"),
-            InlineKeyboardButton("📊 Estadísticas", callback_data="cmd_estadisticas"),
-        ])
-
-    # Fila owner (solo el propietario del sistema)
-    if _es_owner(user_id):
-        keyboard.append([
-            InlineKeyboardButton("👑 Admins",    callback_data="cmd_admins"),
-            InlineKeyboardButton("⚙️ Config",   callback_data="cmd_config"),
-            InlineKeyboardButton("📤 Exportar", callback_data="cmd_exportar"),
-        ])
-
-    await message.reply_text(
-        mensaje,
-        parse_mode="MarkdownV2",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        disable_web_page_preview=True,
-    )
+    markup = InlineKeyboardMarkup([_btn_inicio()])
+    await _enviar(message, texto, markup, editar=editar)
 
 
+# ── Admins ────────────────────────────────────────────────────────────────────
 
-    """Vista de ayuda — muestra sección admin si el usuario es admin."""
-    from utils.helpers import es_admin as _es_admin
+async def mostrar_admins(message: Message, editar: bool = False) -> None:
+    """Lista de admins registrados (solo owner)."""
+    admins = db.get_admins()
 
-    mensaje = (
-        "📖 *Guía de uso*\n\n"
-        "*Formas de buscar:*\n\n"
-        "> 1\\. Por número: `55551234`\n"
-        "> 2\\. Por nombre: `Juan Pérez`\n"
-        "> 3\\. Varios a la vez: `55551234 56789012`\n\n"
-        "*Notas:*\n"
-        "• No importan mayúsculas ni minúsculas\n"
-        "• Los espacios en los números se ignoran\n\n"
-        "*Para agregar un contacto:*\n"
-        "> Toca ➕ Agregar contacto o escribe /agregar\n\n"
-        "*Para reportar un número sospechoso:*\n"
-        "> Busca el número y toca ⚠️ Reportar\n"
-    )
+    if not admins:
+        markup = InlineKeyboardMarkup([_btn_inicio()])
+        await _enviar(message,
+                      "📭 No hay admins registrados.\n\nUsa /registrar_admin para agregar uno.",
+                      markup, editar=editar)
+        return
 
-    if _es_admin(user_id):
-        mensaje += (
-            "\n*Comandos admin:*\n"
-            "> /pendientes — aprobar contactos nuevos\n"
-            "> /reportes — gestionar reportes\n"
-            "> /estadisticas — ver estadísticas\n"
-            "> /exportar csv — exportar base de datos\n"
-            "> /avales — avales pendientes\n"
-            "> /reclamos — reclamos pendientes\n"
-            "> /banear — banear reportador\n"
-        )
+    texto = "🔐 *Admins registrados:*\n\n"
+    for a in admins:
+        estado = "✅" if a.get("activo") else "❌"
+        texto += f"{estado} *{a.get('nombre_admin','?')}* — `{a['email']}`\n"
+    texto += "\nUsa /registrar_admin o /eliminar_admin para gestionar."
 
-    if editar:
-        await message.edit_text(mensaje, parse_mode="MarkdownV2")
-    else:
-        await message.reply_text(mensaje, parse_mode="MarkdownV2")
+    markup = InlineKeyboardMarkup([_btn_inicio()])
+    await _enviar(message, texto, markup, editar=editar)
 
+
+# ── Mis reportes ──────────────────────────────────────────────────────────────
+
+async def mostrar_mis_reportes(message: Message, user_id: str,
+                                editar: bool = False) -> None:
+    """Reportes enviados por el usuario."""
+    try:
+        resp = db.client.table("reportes").select(
+            "id, motivo, fecha_reporte, contactos(nombre, apellido, telefono)"
+        ).eq("reportado_por", user_id).order("fecha_reporte", desc=True).limit(10).execute()
+
+        if not resp.data:
+            markup = InlineKeyboardMarkup([_btn_inicio()])
+            await _enviar(message, "📭 No has enviado reportes aún.", markup, editar=editar)
+            return
+
+        texto = f"📌 *Tus reportes ({len(resp.data)}):*\n\n"
+        for r in resp.data:
+            c     = r.get('contactos') or {}
+            fecha = (r.get('fecha_reporte') or '')[:10]
+            texto += (
+                f"⚠️ *{c.get('nombre','')} {c.get('apellido','')}*"
+                f" — `{c.get('telefono','')}`\n"
+                f"   {r['motivo']} — {fecha}\n\n"
+            )
+
+        markup = InlineKeyboardMarkup([_btn_inicio()])
+        await _enviar(message, texto, markup, editar=editar)
+
+    except Exception as e:
+        markup = InlineKeyboardMarkup([_btn_inicio()])
+        await _enviar(message, f"❌ Error: {e}", markup, editar=editar)
+
+
+# ── Lista de búsqueda ─────────────────────────────────────────────────────────
 
 async def mostrar_lista_busqueda(message: Message, contactos: list, query_texto: str,
                                   user_id: str, pagina: int = 1,
@@ -221,8 +298,10 @@ async def mostrar_lista_busqueda(message: Message, contactos: list, query_texto:
     total_pags = max(1, (total + 9) // 10)
     inicio     = (pagina - 1) * 10
     items      = contactos[inicio:inicio + 10]
-    texto, markup = _formato_lista_compacta(items, inicio + 1, total, pagina, total_pags, query_texto)
-    if editar:
-        await message.edit_text(texto, parse_mode="MarkdownV2", reply_markup=markup)
-    else:
-        await message.reply_text(texto, parse_mode="MarkdownV2", reply_markup=markup)
+    texto, markup_busqueda = _formato_lista_compacta(
+        items, inicio + 1, total, pagina, total_pags, query_texto
+    )
+    # Agregar botón inicio preservando los botones de paginación existentes
+    botones = list(markup_busqueda.inline_keyboard) + [_btn_inicio()]
+    await _enviar(message, texto, InlineKeyboardMarkup(botones),
+                  parse_mode="MarkdownV2", editar=editar)

@@ -85,18 +85,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(botones) if botones else None)
         return
 
+    elif data == "cmd_inicio":
+        # Volver al menú principal editando el mensaje actual
+        from utils.views import mostrar_start
+        nombre = query.from_user.first_name or "amigo"
+        await mostrar_start(query.message, query.from_user.id, nombre, editar=True)
+        return
+
     elif data == "cmd_agregar":
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
         await query.edit_message_text(
             "✏️ *Registrar un nuevo contacto*\n\n"
             "Escribe /agregar para iniciar paso a paso\n\n"
             "El proceso te pedirá:\n"
-            "1. Nombre\n"
-            "2. Apellido\n"
-            "3. Teléfono\n"
-            "4. Provincia\n"
-            "5. Municipio\n\n"
-            "_El contacto quedará pendiente de aprobación._",
-            parse_mode="Markdown",
+            "1\\. Nombre\n2\\. Apellido\n3\\. Teléfono\n4\\. Provincia\n5\\. Municipio\n\n"
+            "_El contacto quedará pendiente de aprobación\\._",
+            parse_mode="MarkdownV2",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio")
+            ]]),
         )
         return
 
@@ -106,23 +113,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     elif data == "cmd_misreportes":
-        chat_id_str = str(query.from_user.id)
-        try:
-            resp = db.client.table("reportes").select(
-                "id, motivo, fecha_reporte, contactos(nombre, apellido, telefono)"
-            ).eq("reportado_por", chat_id_str).order("fecha_reporte", desc=True).limit(10).execute()
-            if not resp.data:
-                await query.edit_message_text("📭 No has enviado reportes aún.")
-                return
-            texto = f"📌 *Tus reportes ({len(resp.data)}):*\n\n"
-            for r in resp.data:
-                c     = r.get('contactos') or {}
-                fecha = (r.get('fecha_reporte') or '')[:10]
-                texto += f"⚠️ {c.get('nombre','')} {c.get('apellido','')} — `{c.get('telefono','')}`\n"
-                texto += f"   Motivo: {r['motivo']} — {fecha}\n\n"
-            await query.edit_message_text(texto, parse_mode="Markdown")
-        except Exception as e:
-            await query.edit_message_text(f"❌ Error: {e}")
+        from utils.views import mostrar_mis_reportes
+        await mostrar_mis_reportes(query.message, str(query.from_user.id), editar=True)
         return
 
     elif data in ("cmd_pendientes", "cmd_reportes"):
@@ -141,16 +133,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not admin:
             await query.answer("🔒 Solo admins", show_alert=True)
             return
-        stats = db.get_estadisticas()
-        texto = (
-            "📊 *Estadísticas*\n\n"
-            f"✅ Aprobados:  {stats.get('aprobados', 0):,}\n"
-            f"⏳ Pendientes: {stats.get('pendientes', 0):,}\n"
-            f"❌ Rechazados: {stats.get('rechazados', 0):,}\n"
-            f"📋 Total:      {stats.get('total', 0):,}\n"
-            f"👥 Usuarios Telegram: {stats.get('usuarios_telegram', 0):,}\n"
-        )
-        await query.edit_message_text(texto, parse_mode="Markdown")
+        from utils.views import mostrar_estadisticas
+        await mostrar_estadisticas(query.message, editar=True)
         return
 
     elif data == "cmd_admins":
@@ -158,16 +142,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not _es_owner(query.from_user.id):
             await query.answer("🔒 Solo el owner", show_alert=True)
             return
-        admins = db.get_admins()
-        if not admins:
-            await query.edit_message_text("📭 No hay admins registrados.")
-            return
-        texto = "🔐 *Admins registrados:*\n\n"
-        for a in admins:
-            estado = "✅" if a.get("activo") else "❌"
-            texto += f"{estado} {a.get('nombre_admin','?')} — `{a['email']}`\n"
-        texto += "\nUsa /registrar_admin para agregar uno nuevo."
-        await query.edit_message_text(texto, parse_mode="Markdown")
+        from utils.views import mostrar_admins
+        await mostrar_admins(query.message, editar=True)
         return
 
     elif data == "cmd_config":
@@ -175,9 +151,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not _es_owner(query.from_user.id):
             await query.answer("🔒 Solo el owner", show_alert=True)
             return
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
         await query.edit_message_text(
             "⚙️ *Configuración*\n\nUsa /config para ver y editar la configuración del sistema.",
             parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio")
+            ]]),
         )
         return
 
@@ -185,12 +165,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not admin:
             await query.answer("🔒 Solo admins", show_alert=True)
             return
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
         await query.edit_message_text(
             "📤 *Exportar base de datos*\n\n"
-            "Usa:\n"
-            "• `/exportar csv` — formato CSV\n"
-            "• `/exportar json` — formato JSON",
+            "Usa:\n• `/exportar csv` — formato CSV\n• `/exportar json` — formato JSON",
             parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio")
+            ]]),
         )
         return
 
