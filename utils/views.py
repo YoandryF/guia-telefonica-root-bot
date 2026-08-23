@@ -286,10 +286,15 @@ async def mostrar_admins(message: Message, editar: bool = False) -> None:
         chat   = a.get('chat_id_telegram') or '—'
         texto += f"{estado} <b>{nombre}</b>\n"
         texto += f"   📧 <code>{email}</code>\n"
-        texto += f"   💬 Telegram ID: <code>{chat}</code>\n\n"
-    texto += "<i>Usa /registrar_admin o /eliminar_admin para gestionar.</i>"
+        texto += f"   🪪 ID Telegram: <code>{chat}</code>\n\n"
 
-    markup = InlineKeyboardMarkup([_btn_inicio()])
+    markup = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("➕ Registrar admin", callback_data="cmd_admin_registrar"),
+            InlineKeyboardButton("🗑 Eliminar admin",  callback_data="cmd_admin_eliminar"),
+        ],
+        _btn_inicio(),
+    ])
     await _enviar(message, texto, markup, parse_mode="HTML", editar=editar)
 
 

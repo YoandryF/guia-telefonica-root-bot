@@ -166,6 +166,42 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_admins(query.message, editar=True)
         return
 
+    if data == "cmd_admin_registrar":
+        if not owner:
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        await query.edit_message_text(
+            "➕ <b>Registrar nuevo admin</b>\n\n"
+            "Usa el comando:\n"
+            "<code>/registrar_admin email password nombre</code>\n\n"
+            "Ejemplo:\n"
+            "<code>/registrar_admin juan@email.com Pass123 Juan Pérez</code>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 Volver", callback_data="cmd_admins"),
+                InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio"),
+            ]]),
+        )
+        return
+
+    if data == "cmd_admin_eliminar":
+        if not owner:
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        await query.edit_message_text(
+            "🗑 <b>Eliminar admin</b>\n\n"
+            "Usa el comando:\n"
+            "<code>/eliminar_admin email</code>\n\n"
+            "Ejemplo:\n"
+            "<code>/eliminar_admin juan@email.com</code>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 Volver", callback_data="cmd_admins"),
+                InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio"),
+            ]]),
+        )
+        return
+
     if data == "cmd_config":
         if not owner:
             await query.answer("🔒 Solo el owner", show_alert=True)
