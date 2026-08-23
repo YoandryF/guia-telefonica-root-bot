@@ -537,7 +537,6 @@ async def handle_texto_admin(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Sin nada pendiente — delegar a búsqueda normal
     from handlers.public import handle_texto_libre
     await handle_texto_libre(update, context)
-        return
 
 
 async def verificar(update: Update, context: ContextTypes.DEFAULT_TYPE):
