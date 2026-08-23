@@ -25,25 +25,31 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Callbacks PÚBLICOS (sin guard de admin)
     if data.startswith("pg_"):
-        partes = data.split("_", 2)
-        pagina = int(partes[2]) if len(partes) > 2 and partes[2].isdigit() else 1
+        partes  = data.split("_", 2)
+        pagina  = int(partes[2]) if len(partes) > 2 and partes[2].isdigit() else 1
         chat_id = str(query.from_user.id)
-        cache = cache_resultados_get(chat_id)
+        cache   = cache_resultados_get(chat_id)
 
-        if cache and cache.get('tipo') == 'listar':
-            # Paginación real desde Supabase — total ya en cache, no hace segunda query
-            por_pagina = 10
-            total = cache.get('total', 0)
-            offset = (pagina - 1) * por_pagina
-            contactos, _ = db.get_contactos_aprobados(limite=por_pagina, offset=offset)
-            total_pags = max(1, (total + por_pagina - 1) // por_pagina)
-            texto, markup = _formato_lista_compacta(contactos, offset + 1, total, pagina, total_pags, '')
-            await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=markup)
-        elif cache and 'contactos' in cache:
-            # Búsqueda — cache local
-            await _mostrar_lista(query, context, cache['contactos'], pagina, query_texto=cache.get('query', ''), editar=True)
-        else:
+        if not cache:
             await query.answer("⚠️ Sesión expirada. Busca de nuevo.", show_alert=True)
+            return
+
+        from utils.views import mostrar_lista_busqueda
+        contactos  = cache.get('contactos') or []
+        query_text = cache.get('query', '')
+
+        if cache.get('tipo') == 'listar':
+            # Paginación desde Supabase
+            por_pagina = 10
+            total      = cache.get('total', 0)
+            offset     = (pagina - 1) * por_pagina
+            contactos, _ = db.get_contactos_aprobados(limite=por_pagina, offset=offset)
+            cache_resultados_set(chat_id, {**cache, 'contactos': contactos})
+
+        await mostrar_lista_busqueda(
+            query.message, contactos, query_text, chat_id,
+            pagina=pagina, editar=True,
+        )
         return
 
     elif data.startswith("ln_"):
@@ -250,51 +256,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"✏️ Escribe el nuevo valor para `{clave}`:", parse_mode="Markdown")
 
     elif data.startswith("pend_pg_"):
-        # Paginación de pendientes — navegar a página específica
+        # Paginación de pendientes — delegar a views.mostrar_pendientes
         if not admin:
             await query.answer("🔒 Solo admins", show_alert=True)
             return
         nueva_pag = int(data.replace("pend_pg_", ""))
-        context.user_data['pend_pagina'] = nueva_pag
-        # Reconstruir la lista desde cache
-        from utils.helpers import cache_resultados_get
-        cached = cache_resultados_get(str(query.from_user.id) + '_pend')
-        if not cached:
-            await query.answer("⚠️ Sesión expirada. Usa /pendientes de nuevo.", show_alert=True)
-            return
-        contactos = cached['contactos']
-        filtro    = cached.get('filtro')
-        total     = len(contactos)
-        por_pag   = 5
-        pagina    = max(0, min(nueva_pag, (total-1)//por_pag))
-        inicio    = pagina * por_pag
-        lote      = contactos[inicio:inicio + por_pag]
-
-        texto = f"⏳ *Pendientes ({inicio+1}–{min(inicio+por_pag, total)} de {total})*\n"
-        if filtro:
-            texto += f"_Filtro: \"{filtro}\"_\n"
-        texto += "\n"
-        botones = []
-        for c in lote:
-            nombre = f"{c['nombre']} {c['apellido']}"
-            prov   = c.get('provincia') or ''
-            mun    = c.get('municipio') or ''
-            ubi    = f" — {mun}, {prov}" if mun else (f" — {prov}" if prov else "")
-            texto += f"👤 *{nombre}*\n📱 `{c['telefono']}`{ubi}\n\n"
-            cid8   = c['id'][:8]
-            botones.append([
-                InlineKeyboardButton(f"✅ {c['telefono']}", callback_data=f"aprobar_{cid8}"),
-                InlineKeyboardButton("❌",                  callback_data=f"rechazar_{cid8}"),
-                InlineKeyboardButton("🗑",                  callback_data=f"confirmar_del_{cid8}"),
-            ])
-        nav = []
-        if pagina > 0:
-            nav.append(InlineKeyboardButton("⬅️ Anterior", callback_data=f"pend_pg_{pagina-1}"))
-        if inicio + por_pag < total:
-            nav.append(InlineKeyboardButton("Siguiente ➡️", callback_data=f"pend_pg_{pagina+1}"))
-        if nav:
-            botones.append(nav)
-        await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(botones))
+        from utils.views import mostrar_pendientes
+        await mostrar_pendientes(
+            query.message, context, query.from_user.id,
+            pagina=nueva_pag, editar=True,
+        )
         return
 
     elif data in ("pend_prev", "pend_next"):
