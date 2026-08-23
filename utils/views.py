@@ -24,12 +24,15 @@ def _btn_inicio() -> list:
 
 
 async def _enviar(message: Message, texto: str, markup: InlineKeyboardMarkup,
-                  parse_mode: str = "Markdown", editar: bool = False) -> None:
+                  parse_mode: str | None = "Markdown", editar: bool = False) -> None:
     """Enviar o editar un mensaje según el contexto."""
+    kwargs = {"reply_markup": markup}
+    if parse_mode:
+        kwargs["parse_mode"] = parse_mode
     if editar:
-        await message.edit_text(texto, parse_mode=parse_mode, reply_markup=markup)
+        await message.edit_text(texto, **kwargs)
     else:
-        await message.reply_text(texto, parse_mode=parse_mode, reply_markup=markup)
+        await message.reply_text(texto, **kwargs)
 
 
 # ── Start / Inicio ────────────────────────────────────────────────────────────
@@ -244,14 +247,16 @@ async def mostrar_admins(message: Message, editar: bool = False) -> None:
                       markup, editar=editar)
         return
 
-    texto = "🔐 *Admins registrados:*\n\n"
+    texto = "🔐 Admins registrados:\n\n"
     for a in admins:
         estado = "✅" if a.get("activo") else "❌"
-        texto += f"{estado} *{a.get('nombre_admin','?')}* — `{a['email']}`\n"
+        nombre = a.get('nombre_admin') or '?'
+        email  = a.get('email', '')
+        texto += f"{estado} {nombre} — {email}\n"
     texto += "\nUsa /registrar_admin o /eliminar_admin para gestionar."
 
     markup = InlineKeyboardMarkup([_btn_inicio()])
-    await _enviar(message, texto, markup, editar=editar)
+    await _enviar(message, texto, markup, parse_mode=None, editar=editar)
 
 
 # ── Mis reportes ──────────────────────────────────────────────────────────────
