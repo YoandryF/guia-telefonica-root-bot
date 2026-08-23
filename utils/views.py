@@ -351,23 +351,19 @@ async def mostrar_config(message: Message, pagina: int = 0,
         sel_cfg = lote[seleccion]
 
     texto  = "<b>⚙️ Configuración del sistema</b>\n"
-    texto += f"<i>Página {pagina+1} de {total_pags} — {total} parámetros</i>\n"
-    texto += "——————————————————\n\n"
+    texto += f"<i>Página {pagina+1} de {total_pags} — {total} parámetros</i>\n\n"
 
     for i, c in enumerate(lote):
-        n     = i + 1
-        valor = c.get('valor', '—')
-        # Escapar caracteres HTML en descripcion y valor
+        n          = i + 1
+        valor      = c.get('valor', '—')
         desc_safe  = _html.escape((c.get('descripcion') or c['clave']).strip())
         valor_safe = _html.escape(str(valor))
 
         if sel_cfg and c['clave'] == sel_cfg['clave']:
-            texto += f"▶ <b>{n}. {desc_safe}</b>\n"
-            texto += f"   Valor: <code>{valor_safe}</code>\n"
+            texto += f"▶ <b>{n}. {desc_safe}:</b> <code>{valor_safe}</code>\n"
             texto += f"   <i>Clave: {_html.escape(c['clave'])}</i>\n\n"
         else:
-            texto += f"<b>{n}.</b> {desc_safe}\n"
-            texto += f"   <code>{valor_safe}</code>\n"
+            texto += f"{n}. {desc_safe}: <code>{valor_safe}</code>\n"
 
     # ── Botones: números 1-N para seleccionar ────────────────────────────────
     botones = []
