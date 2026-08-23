@@ -186,10 +186,7 @@ async def _finalizar_registro(update: Update, context: ContextTypes.DEFAULT_TYPE
         from utils.helpers import ADMIN_CHAT_ID
         if ADMIN_CHAT_ID:
             try:
-                from telegram import Bot
-                import os
-                bot = Bot(token=os.getenv("TELEGRAM_BOT_TOKEN"))
-                await bot.send_message(
+                await context.bot.send_message(
                     chat_id=ADMIN_CHAT_ID,
                     text=(
                         f"📥 *Nuevo contacto pendiente*\n\n"
@@ -335,11 +332,8 @@ async def _procesar_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE,
         from utils.helpers import ADMIN_CHAT_ID
         if ADMIN_CHAT_ID:
             try:
-                from telegram import Bot
-                import os
-                bot = Bot(token=os.getenv("TELEGRAM_BOT_TOKEN"))
                 nombre = f"{contacto['nombre']} {contacto.get('apellido','')}"
-                await bot.send_message(
+                await context.bot.send_message(
                     chat_id=ADMIN_CHAT_ID,
                     text=(
                         f"🚨 *Nuevo reporte*\n\n"
