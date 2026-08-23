@@ -395,10 +395,16 @@ def get_reportar_handler():
 REG_ADMIN_NOMBRE, REG_ADMIN_EMAIL, REG_ADMIN_PASS, REG_ADMIN_CONFIRM = range(20, 24)
 
 
+def _cancelar_btn() -> InlineKeyboardMarkup:
+    """Botón cancelar inline — presente en cada paso del flujo."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("❌ Cancelar", callback_data="reg_admin_cancelar")
+    ]])
+
+
 async def reg_admin_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entrada al flujo de registrar admin — desde comando o botón inline."""
     from utils.helpers import es_owner
-    # Puede venir de un CallbackQuery (botón) o de un comando
     user = update.effective_user
     if not es_owner(user.id):
         msg = "🔒 Solo el owner puede registrar admins."
@@ -408,21 +414,18 @@ async def reg_admin_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(msg)
         return ConversationHandler.END
 
-    # Si viene de un botón, editar ese mensaje para no dejar basura
+    texto = (
+        "➕ <b>Nuevo admin — Paso 1/3</b>\n\n"
+        "¿Cuál es el <b>nombre</b> del nuevo admin?"
+    )
     if update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.edit_message_text(
-            "➕ <b>Nuevo admin — Paso 1/3</b>\n\n"
-            "¿Cuál es el <b>nombre</b> del nuevo admin?\n\n"
-            "<i>(escribe /cancelar para salir)</i>",
-            parse_mode="HTML",
+            texto, parse_mode="HTML", reply_markup=_cancelar_btn()
         )
     else:
         await update.message.reply_text(
-            "➕ <b>Nuevo admin — Paso 1/3</b>\n\n"
-            "¿Cuál es el <b>nombre</b> del nuevo admin?",
-            parse_mode="HTML",
-            reply_markup=ReplyKeyboardMarkup([["/cancelar"]], resize_keyboard=True),
+            texto, parse_mode="HTML", reply_markup=_cancelar_btn()
         )
     return REG_ADMIN_NOMBRE
 
@@ -430,13 +433,17 @@ async def reg_admin_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reg_admin_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     nombre = update.message.text.strip()
     if len(nombre) < 2:
-        await update.message.reply_text("⚠️ Mínimo 2 caracteres. Intenta de nuevo:")
+        await update.message.reply_text(
+            "⚠️ Mínimo 2 caracteres. Intenta de nuevo:",
+            reply_markup=_cancelar_btn(),
+        )
         return REG_ADMIN_NOMBRE
     context.user_data['reg_admin_nombre'] = nombre
     await update.message.reply_text(
         f"✅ Nombre: <b>{nombre}</b>\n\n"
         "<b>Paso 2/3</b> — ¿Cuál es el <b>email</b>?",
         parse_mode="HTML",
+        reply_markup=_cancelar_btn(),
     )
     return REG_ADMIN_EMAIL
 
@@ -444,13 +451,18 @@ async def reg_admin_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reg_admin_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     email = update.message.text.strip().lower()
     if '@' not in email or '.' not in email:
-        await update.message.reply_text("⚠️ Email inválido. Intenta de nuevo:")
+        await update.message.reply_text(
+            "⚠️ Email inválido. Intenta de nuevo:",
+            reply_markup=_cancelar_btn(),
+        )
         return REG_ADMIN_EMAIL
     context.user_data['reg_admin_email'] = email
     await update.message.reply_text(
         f"✅ Email: <code>{email}</code>\n\n"
-        "<b>Paso 3/3</b> — Escribe una <b>contraseña temporal</b> (mínimo 8 caracteres):",
+        "<b>Paso 3/3</b> — Escribe una <b>contraseña temporal</b>\n"
+        "<i>(mínimo 8 caracteres — el mensaje se borrará automáticamente)</i>",
         parse_mode="HTML",
+        reply_markup=_cancelar_btn(),
     )
     return REG_ADMIN_PASS
 
@@ -458,7 +470,10 @@ async def reg_admin_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reg_admin_pass(update: Update, context: ContextTypes.DEFAULT_TYPE):
     password = update.message.text.strip()
     if len(password) < 8:
-        await update.message.reply_text("⚠️ Mínimo 8 caracteres. Intenta de nuevo:")
+        await update.message.reply_text(
+            "⚠️ Mínimo 8 caracteres. Intenta de nuevo:",
+            reply_markup=_cancelar_btn(),
+        )
         return REG_ADMIN_PASS
     context.user_data['reg_admin_pass'] = password
 
@@ -472,50 +487,69 @@ async def reg_admin_pass(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     await update.message.reply_text(
-        "🔍 <b>Confirma los datos del nuevo admin:</b>\n\n"
+        "🔍 <b>Confirma los datos:</b>\n\n"
         f"👤 Nombre: <b>{nombre}</b>\n"
         f"📧 Email: <code>{email}</code>\n"
         f"🔑 Contraseña: <code>{'*' * len(password)}</code>\n\n"
         "¿Crear este admin?",
         parse_mode="HTML",
-        reply_markup=ReplyKeyboardMarkup(
-            [["✅ Confirmar", "❌ Cancelar"]], resize_keyboard=True, one_time_keyboard=True
-        ),
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Confirmar", callback_data="reg_admin_confirmar"),
+            InlineKeyboardButton("❌ Cancelar",  callback_data="reg_admin_cancelar"),
+        ]]),
     )
     return REG_ADMIN_CONFIRM
 
 
 async def reg_admin_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    respuesta = update.message.text.strip()
+    """Captura la confirmación via callback inline."""
+    query = update.callback_query
+    await query.answer()
 
-    if "Cancelar" in respuesta or "cancelar" in respuesta.lower():
+    if query.data == "reg_admin_cancelar":
         context.user_data.clear()
-        await update.message.reply_text(
-            "❌ Registro cancelado.", reply_markup=ReplyKeyboardRemove()
-        )
+        await query.edit_message_text("❌ Registro cancelado.")
+        # Volver a la vista de admins
+        from utils.views import mostrar_admins
+        await mostrar_admins(query.message)
         return ConversationHandler.END
 
-    nombre   = context.user_data.pop('reg_admin_nombre')
-    email    = context.user_data.pop('reg_admin_email')
-    password = context.user_data.pop('reg_admin_pass')
+    nombre   = context.user_data.pop('reg_admin_nombre', '')
+    email    = context.user_data.pop('reg_admin_email', '')
+    password = context.user_data.pop('reg_admin_pass', '')
 
     resultado = db.crear_admin(email=email, password=password, nombre=nombre)
 
     if resultado.get("error"):
-        await update.message.reply_text(
-            f"❌ Error al crear admin: {resultado['error']}",
-            reply_markup=ReplyKeyboardRemove(),
+        await query.edit_message_text(
+            f"❌ Error al crear admin: {resultado['error']}\n\n"
+            "Usa /registrar_admin para intentar de nuevo.",
         )
     else:
-        await update.message.reply_text(
-            f"✅ <b>Admin registrado exitosamente</b>\n\n"
+        await query.edit_message_text(
+            f"✅ <b>Admin registrado</b>\n\n"
             f"👤 {nombre}\n"
             f"📧 <code>{email}</code>\n\n"
             f"Ya puede iniciar sesión en la app.",
             parse_mode="HTML",
-            reply_markup=ReplyKeyboardRemove(),
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("👥 Ver admins", callback_data="cmd_admins"),
+                InlineKeyboardButton("🏠 Inicio",     callback_data="cmd_inicio"),
+            ]]),
         )
+    return ConversationHandler.END
 
+
+async def reg_admin_cancelar_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancelar el flujo desde cualquier paso via botón inline."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop('reg_admin_nombre', None)
+    context.user_data.pop('reg_admin_email', None)
+    context.user_data.pop('reg_admin_pass', None)
+    await query.edit_message_text("❌ Registro cancelado.")
+    from utils.views import mostrar_admins
+    await mostrar_admins(query.message)
     return ConversationHandler.END
 
 
@@ -529,7 +563,13 @@ def get_registrar_admin_handler():
             REG_ADMIN_NOMBRE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_nombre)],
             REG_ADMIN_EMAIL:   [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_email)],
             REG_ADMIN_PASS:    [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_pass)],
-            REG_ADMIN_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_confirm)],
+            REG_ADMIN_CONFIRM: [
+                CallbackQueryHandler(reg_admin_confirm,  pattern="^reg_admin_confirmar$"),
+                CallbackQueryHandler(reg_admin_cancelar_cb, pattern="^reg_admin_cancelar$"),
+            ],
         },
-        fallbacks=[CommandHandler("cancelar", cancelar)],
+        fallbacks=[
+            CommandHandler("cancelar", cancelar),
+            CallbackQueryHandler(reg_admin_cancelar_cb, pattern="^reg_admin_cancelar$"),
+        ],
     )
