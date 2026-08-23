@@ -226,24 +226,29 @@ class SupabaseService:
             return []
 
     def aprobar_contacto(self, identificador: str, aprobado_por: str = None) -> dict:
-        """Aprobar un contacto pendiente"""
+        """Aprobar un contacto pendiente. Acepta UUID completo, prefijo de 8 chars o teléfono."""
         if not self._check_client():
             return {"error": "BD no disponible"}
         try:
-            response = (
-                self.client.table("contactos")
-                .select("*")
-                .eq("id", identificador) if len(identificador) > 30 else None
-                .eq("estado", "pendiente")
-                .execute()
-            )
-
-            if not response.data:
+            # Buscar por UUID (completo o prefijo) o por teléfono
+            if any(c.isalpha() or c == '-' for c in identificador):
+                response = (
+                    self.client.table("contactos")
+                    .select("*")
+                    .ilike("id", f"{identificador}%")
+                    .eq("estado", "pendiente")
+                    .is_("deleted_at", None)
+                    .limit(1)
+                    .execute()
+                )
+            else:
                 response = (
                     self.client.table("contactos")
                     .select("*")
                     .ilike("telefono", f"%{identificador}%")
                     .eq("estado", "pendiente")
+                    .is_("deleted_at", None)
+                    .limit(1)
                     .execute()
                 )
 
@@ -251,15 +256,15 @@ class SupabaseService:
                 return {"error": "Contacto no encontrado o ya procesado"}
 
             contacto = response.data[0]
-            full_id = contacto["id"]
+            full_id  = contacto["id"]
 
             update_response = (
                 self.client.table("contactos")
                 .update({
-                    "estado": "aprobado",
-                    "aprobado_por": aprobado_por,
-                    "fecha_aprobacion": datetime.utcnow().isoformat(),
-                    "ultima_modificacion": datetime.utcnow().isoformat(),
+                    "estado":               "aprobado",
+                    "aprobado_por":         aprobado_por,
+                    "fecha_aprobacion":     datetime.utcnow().isoformat(),
+                    "ultima_modificacion":  datetime.utcnow().isoformat(),
                 })
                 .eq("id", full_id)
                 .execute()
@@ -272,24 +277,28 @@ class SupabaseService:
             return {"error": str(e)}
 
     def rechazar_contacto(self, identificador: str, motivo: str = None) -> dict:
-        """Rechazar un contacto pendiente"""
+        """Rechazar un contacto pendiente. Acepta UUID completo, prefijo de 8 chars o teléfono."""
         if not self._check_client():
             return {"error": "BD no disponible"}
         try:
-            response = (
-                self.client.table("contactos")
-                .select("*")
-                .eq("id", identificador) if len(identificador) > 30 else None
-                .eq("estado", "pendiente")
-                .execute()
-            )
-
-            if not response.data:
+            if any(c.isalpha() or c == '-' for c in identificador):
+                response = (
+                    self.client.table("contactos")
+                    .select("*")
+                    .ilike("id", f"{identificador}%")
+                    .eq("estado", "pendiente")
+                    .is_("deleted_at", None)
+                    .limit(1)
+                    .execute()
+                )
+            else:
                 response = (
                     self.client.table("contactos")
                     .select("*")
                     .ilike("telefono", f"%{identificador}%")
                     .eq("estado", "pendiente")
+                    .is_("deleted_at", None)
+                    .limit(1)
                     .execute()
                 )
 
@@ -297,14 +306,14 @@ class SupabaseService:
                 return {"error": "Contacto no encontrado o ya procesado"}
 
             contacto = response.data[0]
-            full_id = contacto["id"]
+            full_id  = contacto["id"]
 
             update_response = (
                 self.client.table("contactos")
                 .update({
-                    "estado": "rechazado",
-                    "motivo_rechazo": motivo,
-                    "ultima_modificacion": datetime.utcnow().isoformat(),
+                    "estado":               "rechazado",
+                    "motivo_rechazo":       motivo,
+                    "ultima_modificacion":  datetime.utcnow().isoformat(),
                 })
                 .eq("id", full_id)
                 .execute()
