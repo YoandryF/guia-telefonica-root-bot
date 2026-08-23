@@ -111,15 +111,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id_str = str(query.from_user.id)
         try:
             resp = db.client.table("reportes").select(
-                "id, motivo, created_at, contactos(nombre, apellido, telefono)"
-            ).eq("reportado_por", chat_id_str).order("created_at", desc=True).limit(10).execute()
+                "id, motivo, fecha_reporte, contactos(nombre, apellido, telefono)"
+            ).eq("reportado_por", chat_id_str).order("fecha_reporte", desc=True).limit(10).execute()
             if not resp.data:
                 await query.edit_message_text("📭 No has enviado reportes aún.")
                 return
             texto = f"📌 *Tus reportes ({len(resp.data)}):*\n\n"
             for r in resp.data:
                 c     = r.get('contactos') or {}
-                fecha = (r.get('created_at') or '')[:10]
+                fecha = (r.get('fecha_reporte') or '')[:10]
                 texto += f"⚠️ {c.get('nombre','')} {c.get('apellido','')} — `{c.get('telefono','')}`\n"
                 texto += f"   Motivo: {r['motivo']} — {fecha}\n\n"
             await query.edit_message_text(texto, parse_mode="Markdown")
