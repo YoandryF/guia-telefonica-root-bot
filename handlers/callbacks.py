@@ -137,6 +137,63 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await mostrar_reportes(query.message, editar=True)
         return
 
+    elif data == "cmd_estadisticas":
+        if not admin:
+            await query.answer("🔒 Solo admins", show_alert=True)
+            return
+        stats = db.get_estadisticas()
+        texto = (
+            "📊 *Estadísticas*\n\n"
+            f"✅ Aprobados:  {stats.get('aprobados', 0):,}\n"
+            f"⏳ Pendientes: {stats.get('pendientes', 0):,}\n"
+            f"❌ Rechazados: {stats.get('rechazados', 0):,}\n"
+            f"📋 Total:      {stats.get('total', 0):,}\n"
+            f"👥 Usuarios Telegram: {stats.get('usuarios_telegram', 0):,}\n"
+        )
+        await query.edit_message_text(texto, parse_mode="Markdown")
+        return
+
+    elif data == "cmd_admins":
+        from utils.helpers import es_owner as _es_owner
+        if not _es_owner(query.from_user.id):
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        admins = db.get_admins()
+        if not admins:
+            await query.edit_message_text("📭 No hay admins registrados.")
+            return
+        texto = "🔐 *Admins registrados:*\n\n"
+        for a in admins:
+            estado = "✅" if a.get("activo") else "❌"
+            texto += f"{estado} {a.get('nombre_admin','?')} — `{a['email']}`\n"
+        texto += "\nUsa /registrar_admin para agregar uno nuevo."
+        await query.edit_message_text(texto, parse_mode="Markdown")
+        return
+
+    elif data == "cmd_config":
+        from utils.helpers import es_owner as _es_owner
+        if not _es_owner(query.from_user.id):
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        await query.edit_message_text(
+            "⚙️ *Configuración*\n\nUsa /config para ver y editar la configuración del sistema.",
+            parse_mode="Markdown",
+        )
+        return
+
+    elif data == "cmd_exportar":
+        if not admin:
+            await query.answer("🔒 Solo admins", show_alert=True)
+            return
+        await query.edit_message_text(
+            "📤 *Exportar base de datos*\n\n"
+            "Usa:\n"
+            "• `/exportar csv` — formato CSV\n"
+            "• `/exportar json` — formato JSON",
+            parse_mode="Markdown",
+        )
+        return
+
     # Ver detalle de un contacto desde la lista (botón "Ver")
     elif data.startswith("ver_"):
         cid8 = data.replace("ver_", "")

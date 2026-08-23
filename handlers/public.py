@@ -74,40 +74,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Error registrando referido: {e}")
 
     # Bienvenida principal
-    nombre = user.first_name or "amigo"
-    mensaje = (
-        f"👋 Hola, *{_esc(nombre)}*\\! Bienvenido a la *Guía Telefónica Colaborativa*\\.\n\n"
-        "Escribe directamente para buscar:\n\n"
-        "> 📱 Por número: `55551234`\n"
-        "> 👤 Por nombre: `Juan Pérez`\n"
-        "> 🔢 Varios a la vez: `55551234 56789012`\n\n"
-        "📲 [Descargar app Android](https://github.com/YoandryF/guia-telefonica-root-app/releases/latest)\n\n"
-        "_Base de datos colaborativa — tu aporte importa_ 🤝"
-    )
-
-    keyboard = [
-        [
-            InlineKeyboardButton("🔍 Buscar", switch_inline_query_current_chat=""),
-            InlineKeyboardButton("➕ Agregar contacto", callback_data="cmd_agregar"),
-        ],
-        [
-            InlineKeyboardButton("📌 Mis reportes", callback_data="cmd_misreportes"),
-            InlineKeyboardButton("❓ Ayuda",         callback_data="cmd_ayuda"),
-        ],
-    ]
-
-    if es_admin(user.id):
-        keyboard.append([
-            InlineKeyboardButton("🔐 Pendientes", callback_data="cmd_pendientes"),
-            InlineKeyboardButton("🚨 Reportes",   callback_data="cmd_reportes"),
-        ])
-
-    await update.message.reply_text(
-        mensaje,
-        parse_mode="MarkdownV2",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        disable_web_page_preview=True,
-    )
+    from utils.views import mostrar_start
+    await mostrar_start(update.message, user.id, user.first_name)
 
 
 async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):

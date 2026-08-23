@@ -122,7 +122,60 @@ async def mostrar_reportes(message: Message, editar: bool = False) -> None:
 
 # ── Búsqueda ──────────────────────────────────────────────────────────────────
 
-async def mostrar_ayuda(message, user_id: int, editar: bool = False) -> None:
+async def mostrar_start(message, user_id: int, primer_nombre: str) -> None:
+    """Vista del mensaje de bienvenida — botones según rol del usuario."""
+    from utils.helpers import es_admin as _es_admin, es_owner as _es_owner
+    from utils.formatters import _esc
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    nombre  = primer_nombre or "amigo"
+    mensaje = (
+        f"👋 Hola, *{_esc(nombre)}*\\! Bienvenido a la *Guía Telefónica Colaborativa*\\.\n\n"
+        "Escribe directamente para buscar:\n\n"
+        "> 📱 Por número: `55551234`\n"
+        "> 👤 Por nombre: `Juan Pérez`\n"
+        "> 🔢 Varios a la vez: `55551234 56789012`\n\n"
+        "📲 [Descargar app Android](https://github.com/YoandryF/guia-telefonica-root-app/releases/latest)\n\n"
+        "_Base de datos colaborativa — tu aporte importa_ 🤝"
+    )
+
+    # Botones base — todos los usuarios
+    keyboard = [
+        [
+            InlineKeyboardButton("🔍 Buscar",           switch_inline_query_current_chat=""),
+            InlineKeyboardButton("➕ Agregar contacto", callback_data="cmd_agregar"),
+        ],
+        [
+            InlineKeyboardButton("📌 Mis reportes", callback_data="cmd_misreportes"),
+            InlineKeyboardButton("❓ Ayuda",         callback_data="cmd_ayuda"),
+        ],
+    ]
+
+    # Fila admin
+    if _es_admin(user_id):
+        keyboard.append([
+            InlineKeyboardButton("⏳ Pendientes",   callback_data="cmd_pendientes"),
+            InlineKeyboardButton("🚨 Reportes",     callback_data="cmd_reportes"),
+            InlineKeyboardButton("📊 Estadísticas", callback_data="cmd_estadisticas"),
+        ])
+
+    # Fila owner (solo el propietario del sistema)
+    if _es_owner(user_id):
+        keyboard.append([
+            InlineKeyboardButton("👑 Admins",    callback_data="cmd_admins"),
+            InlineKeyboardButton("⚙️ Config",   callback_data="cmd_config"),
+            InlineKeyboardButton("📤 Exportar", callback_data="cmd_exportar"),
+        ])
+
+    await message.reply_text(
+        mensaje,
+        parse_mode="MarkdownV2",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        disable_web_page_preview=True,
+    )
+
+
+
     """Vista de ayuda — muestra sección admin si el usuario es admin."""
     from utils.helpers import es_admin as _es_admin
 
