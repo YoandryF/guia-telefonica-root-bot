@@ -387,3 +387,133 @@ def get_reportar_handler():
         },
         fallbacks=[CommandHandler("cancelar", cancelar)],
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /registrar_admin interactivo (solo owner)
+# ─────────────────────────────────────────────────────────────────────────────
+REG_ADMIN_NOMBRE, REG_ADMIN_EMAIL, REG_ADMIN_PASS, REG_ADMIN_CONFIRM = range(20, 24)
+
+
+async def reg_admin_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Entrada al flujo de registrar admin — solo owner."""
+    from utils.helpers import es_owner
+    if not es_owner(update.effective_user.id):
+        await update.message.reply_text("🔒 Solo el owner puede registrar admins.")
+        return ConversationHandler.END
+
+    await update.message.reply_text(
+        "➕ <b>Nuevo admin — Paso 1/3</b>\n\n"
+        "¿Cuál es el <b>nombre</b> del nuevo admin?",
+        parse_mode="HTML",
+        reply_markup=ReplyKeyboardMarkup([["/cancelar"]], resize_keyboard=True),
+    )
+    return REG_ADMIN_NOMBRE
+
+
+async def reg_admin_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    nombre = update.message.text.strip()
+    if len(nombre) < 2:
+        await update.message.reply_text("⚠️ Mínimo 2 caracteres. Intenta de nuevo:")
+        return REG_ADMIN_NOMBRE
+    context.user_data['reg_admin_nombre'] = nombre
+    await update.message.reply_text(
+        f"✅ Nombre: <b>{nombre}</b>\n\n"
+        "<b>Paso 2/3</b> — ¿Cuál es el <b>email</b>?",
+        parse_mode="HTML",
+    )
+    return REG_ADMIN_EMAIL
+
+
+async def reg_admin_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    email = update.message.text.strip().lower()
+    if '@' not in email or '.' not in email:
+        await update.message.reply_text("⚠️ Email inválido. Intenta de nuevo:")
+        return REG_ADMIN_EMAIL
+    context.user_data['reg_admin_email'] = email
+    await update.message.reply_text(
+        f"✅ Email: <code>{email}</code>\n\n"
+        "<b>Paso 3/3</b> — Escribe una <b>contraseña temporal</b> (mínimo 8 caracteres):",
+        parse_mode="HTML",
+    )
+    return REG_ADMIN_PASS
+
+
+async def reg_admin_pass(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    password = update.message.text.strip()
+    if len(password) < 8:
+        await update.message.reply_text("⚠️ Mínimo 8 caracteres. Intenta de nuevo:")
+        return REG_ADMIN_PASS
+    context.user_data['reg_admin_pass'] = password
+
+    nombre = context.user_data['reg_admin_nombre']
+    email  = context.user_data['reg_admin_email']
+
+    # Borrar el mensaje con la contraseña por seguridad
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    await update.message.reply_text(
+        "🔍 <b>Confirma los datos del nuevo admin:</b>\n\n"
+        f"👤 Nombre: <b>{nombre}</b>\n"
+        f"📧 Email: <code>{email}</code>\n"
+        f"🔑 Contraseña: <code>{'*' * len(password)}</code>\n\n"
+        "¿Crear este admin?",
+        parse_mode="HTML",
+        reply_markup=ReplyKeyboardMarkup(
+            [["✅ Confirmar", "❌ Cancelar"]], resize_keyboard=True, one_time_keyboard=True
+        ),
+    )
+    return REG_ADMIN_CONFIRM
+
+
+async def reg_admin_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    respuesta = update.message.text.strip()
+
+    if "Cancelar" in respuesta or "cancelar" in respuesta.lower():
+        context.user_data.clear()
+        await update.message.reply_text(
+            "❌ Registro cancelado.", reply_markup=ReplyKeyboardRemove()
+        )
+        return ConversationHandler.END
+
+    nombre   = context.user_data.pop('reg_admin_nombre')
+    email    = context.user_data.pop('reg_admin_email')
+    password = context.user_data.pop('reg_admin_pass')
+
+    resultado = db.crear_admin(email=email, password=password, nombre=nombre)
+
+    if resultado.get("error"):
+        await update.message.reply_text(
+            f"❌ Error al crear admin: {resultado['error']}",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+    else:
+        await update.message.reply_text(
+            f"✅ <b>Admin registrado exitosamente</b>\n\n"
+            f"👤 {nombre}\n"
+            f"📧 <code>{email}</code>\n\n"
+            f"Ya puede iniciar sesión en la app.",
+            parse_mode="HTML",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+
+    return ConversationHandler.END
+
+
+def get_registrar_admin_handler():
+    return ConversationHandler(
+        entry_points=[
+            CommandHandler("registrar_admin", reg_admin_inicio),
+            # También se puede iniciar desde el botón inline
+        ],
+        states={
+            REG_ADMIN_NOMBRE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_nombre)],
+            REG_ADMIN_EMAIL:   [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_email)],
+            REG_ADMIN_PASS:    [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_pass)],
+            REG_ADMIN_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_confirm)],
+        },
+        fallbacks=[CommandHandler("cancelar", cancelar)],
+    )

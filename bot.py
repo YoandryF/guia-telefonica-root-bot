@@ -52,9 +52,10 @@ def create_app():
     app.add_handler(CommandHandler("help",  ayuda))
 
     # ── Flujos interactivos (todo se hace desde botones o texto libre) ────────
-    from conversations import get_agregar_handler, get_reportar_handler
+    from conversations import get_agregar_handler, get_reportar_handler, get_registrar_admin_handler
     app.add_handler(get_agregar_handler())
     app.add_handler(get_reportar_handler())
+    app.add_handler(get_registrar_admin_handler())
 
     # ── Callbacks de botones inline ───────────────────────────────────────────
     app.add_handler(CallbackQueryHandler(callback_handler))

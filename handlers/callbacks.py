@@ -18,7 +18,8 @@ from utils.formatters import _formato_lista_compacta
 from utils.views import (
     mostrar_pendientes, mostrar_reportes, mostrar_contacto,
     mostrar_start, mostrar_ayuda, mostrar_estadisticas,
-    mostrar_admins, mostrar_mis_reportes, mostrar_lista_busqueda,
+    mostrar_admins, mostrar_eliminar_admin, mostrar_confirmar_eliminar_admin,
+    mostrar_mis_reportes, mostrar_lista_busqueda,
     mostrar_config, mostrar_editar_config,
 )
 
@@ -172,14 +173,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         await query.edit_message_text(
             "➕ <b>Registrar nuevo admin</b>\n\n"
-            "Usa el comando:\n"
-            "<code>/registrar_admin email password nombre</code>\n\n"
-            "Ejemplo:\n"
-            "<code>/registrar_admin juan@email.com Pass123 Juan Pérez</code>",
+            "Escribe /registrar_admin para iniciar el flujo paso a paso.\n\n"
+            "<i>(nombre → email → contraseña → confirmación)</i>",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("🔙 Volver", callback_data="cmd_admins"),
-                InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio"),
             ]]),
         )
         return
@@ -188,18 +186,39 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not owner:
             await query.answer("🔒 Solo el owner", show_alert=True)
             return
-        await query.edit_message_text(
-            "🗑 <b>Eliminar admin</b>\n\n"
-            "Usa el comando:\n"
-            "<code>/eliminar_admin email</code>\n\n"
-            "Ejemplo:\n"
-            "<code>/eliminar_admin juan@email.com</code>",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔙 Volver", callback_data="cmd_admins"),
-                InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio"),
-            ]]),
-        )
+        await mostrar_eliminar_admin(query.message, editar=True)
+        return
+
+    if data.startswith("del_admin_"):
+        if not owner:
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        email = data[10:]  # quitar "del_admin_"
+        await mostrar_confirmar_eliminar_admin(query.message, email, editar=True)
+        return
+
+    if data.startswith("confirmar_del_admin_"):
+        if not owner:
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        email     = data[20:]  # quitar "confirmar_del_admin_"
+        resultado = db.desactivar_admin(email)
+        if resultado.get("error"):
+            await query.edit_message_text(
+                f"❌ Error: {resultado['error']}",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Volver", callback_data="cmd_admins")
+                ]]),
+            )
+        else:
+            await query.edit_message_text(
+                f"✅ Admin <code>{email}</code> desactivado.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Ver admins", callback_data="cmd_admins"),
+                    InlineKeyboardButton("🏠 Inicio",     callback_data="cmd_inicio"),
+                ]]),
+            )
         return
 
     if data == "cmd_config":

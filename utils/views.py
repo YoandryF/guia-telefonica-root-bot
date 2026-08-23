@@ -466,6 +466,66 @@ async def mostrar_editar_config(message: Message, clave: str,
     await _enviar(message, texto, markup, parse_mode=None, editar=editar)
 
 
+async def mostrar_eliminar_admin(message: Message, editar: bool = False) -> None:
+    """Vista para eliminar un admin — lista con botón por cada uno."""
+    admins = db.get_admins()
+    activos = [a for a in admins if a.get('activo')]
+
+    if not activos:
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Volver", callback_data="cmd_admins")],
+            _btn_inicio(),
+        ])
+        await _enviar(message, "📭 No hay admins activos para eliminar.",
+                      markup, parse_mode=None, editar=editar)
+        return
+
+    texto = "<b>🗑 Eliminar admin</b>\n\n"
+    texto += "Selecciona el admin a desactivar:\n\n"
+    for a in activos:
+        nombre = _html.escape(a.get('nombre_admin') or '?')
+        email  = _html.escape(a.get('email', ''))
+        texto += f"• <b>{nombre}</b> — <code>{email}</code>\n"
+
+    botones = []
+    for a in activos:
+        nombre = a.get('nombre_admin') or '?'
+        email  = a.get('email', '')
+        botones.append([InlineKeyboardButton(
+            f"🗑 {nombre}",
+            callback_data=f"del_admin_{email[:30]}"
+        )])
+    botones.append([InlineKeyboardButton("🔙 Volver", callback_data="cmd_admins")])
+    botones.append(_btn_inicio())
+
+    await _enviar(message, texto, InlineKeyboardMarkup(botones),
+                  parse_mode="HTML", editar=editar)
+
+
+async def mostrar_confirmar_eliminar_admin(message: Message, email: str,
+                                           editar: bool = False) -> None:
+    """Pantalla de confirmación antes de desactivar un admin."""
+    admins = db.get_admins()
+    admin  = next((a for a in admins if a.get('email', '') == email), None)
+    nombre = admin.get('nombre_admin', email) if admin else email
+
+    texto = (
+        f"⚠️ <b>¿Desactivar este admin?</b>\n\n"
+        f"👤 <b>{_html.escape(nombre)}</b>\n"
+        f"📧 <code>{_html.escape(email)}</code>\n\n"
+        f"<i>El admin perderá acceso a la app inmediatamente.</i>"
+    )
+    markup = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Sí, desactivar", callback_data=f"confirmar_del_admin_{email[:30]}"),
+            InlineKeyboardButton("❌ No",             callback_data="cmd_admin_eliminar"),
+        ],
+        _btn_inicio(),
+    ])
+    await _enviar(message, texto, markup, parse_mode="HTML", editar=editar)
+
+
+
 async def mostrar_lista_busqueda(message: Message, contactos: list, query_texto: str,
                                   user_id: str, pagina: int = 1,
                                   editar: bool = False) -> None:
