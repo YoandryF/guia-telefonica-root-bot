@@ -332,34 +332,48 @@ async def exportar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usa: `/exportar csv` o `/exportar json`", parse_mode="Markdown")
         return
 
-    await update.message.reply_text("⏳ Generando archivo...")
+    msg = await update.message.reply_text("⏳ Generando archivo...")
 
-    contactos = db.get_contactos_aprobados()
+    # get_contactos_aprobados retorna (lista, total) — desempaquetar correctamente
+    # Límite razonable para exportar via Telegram (archivos grandes fallan)
+    contactos, total = db.get_contactos_aprobados(limite=5000, offset=0)
     if not contactos:
-        await update.message.reply_text("📭 No hay contactos para exportar.")
+        await msg.edit_text("📭 No hay contactos para exportar.")
         return
 
     if formato == "csv":
         output = io.StringIO()
         writer = csv_module.writer(output)
-        writer.writerow(["nombre", "apellido", "telefono", "direccion", "ci"])
+        writer.writerow(["nombre", "apellido", "telefono", "provincia", "municipio"])
         for c in contactos:
-            writer.writerow([c["nombre"], c["apellido"], c["telefono"], c.get("direccion", ""), c.get("ci", "")])
-        content = output.getvalue().encode("utf-8")
+            writer.writerow([
+                c.get("nombre", ""), c.get("apellido", ""),
+                c.get("telefono", ""), c.get("provincia", ""),
+                c.get("municipio", ""),
+            ])
+        content  = output.getvalue().encode("utf-8")
         filename = "guia_telefonica.csv"
     else:
         data = {
-            "metadatos": {"total": len(contactos), "fecha": str(datetime.utcnow())},
-            "contactos": [{"nombre": c["nombre"], "apellido": c["apellido"], "telefono": c["telefono"], "direccion": c.get("direccion"), "ci": c.get("ci")} for c in contactos],
+            "metadatos": {"exportados": len(contactos), "total_bd": total,
+                          "fecha": str(datetime.utcnow())},
+            "contactos": [
+                {"nombre": c.get("nombre"), "apellido": c.get("apellido"),
+                 "telefono": c.get("telefono"), "provincia": c.get("provincia"),
+                 "municipio": c.get("municipio")}
+                for c in contactos
+            ],
         }
-        content = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+        content  = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
         filename = "guia_telefonica.json"
 
+    nota = f" (primeros {len(contactos)} de {total})" if total > len(contactos) else ""
     await update.message.reply_document(
         document=io.BytesIO(content),
         filename=filename,
-        caption=f"✅ {len(contactos)} contactos exportados ({formato.upper()})",
+        caption=f"✅ {len(contactos)} contactos exportados{nota} ({formato.upper()})",
     )
+    await msg.delete()
 
 
 async def importar_archivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
