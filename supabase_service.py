@@ -597,12 +597,22 @@ class SupabaseService:
             return {"error": str(e)}
 
     def get_admins(self) -> list:
-        """Obtener lista de admins"""
+        """Obtener lista de admins — usa RPC para bypassear RLS si está activa."""
         if not self._check_client():
             return []
         try:
-            response = self.client.table("admins").select("*").execute()
-            return response.data
+            # Intentar query directa primero
+            response = self.client.table("admins").select(
+                "id, email, nombre_admin, activo, chat_id_telegram"
+            ).execute()
+            if response.data is not None:
+                return response.data
+        except Exception:
+            pass
+        # Fallback: intentar via RPC si existe
+        try:
+            response = self.client.rpc("get_admins_list", {}).execute()
+            return response.data or []
         except Exception as e:
             logger.error(f"Error obteniendo admins: {e}")
             return []
