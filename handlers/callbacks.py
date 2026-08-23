@@ -7,7 +7,7 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from utils.helpers import db, es_admin, _mostrar_lista, cache_resultados_get, cache_resultados_set
+from utils.helpers import db, es_admin, cache_resultados_get, cache_resultados_set
 from utils.formatters import _formato_lista_compacta, formatear_contacto, teclado_contacto
 from utils.views import mostrar_pendientes, mostrar_reportes, mostrar_contacto
 

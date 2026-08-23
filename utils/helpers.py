@@ -7,7 +7,6 @@ import time
 import logging
 from dotenv import load_dotenv
 from supabase_service import SupabaseService
-from utils.formatters import _formato_lista_compacta
 
 load_dotenv()
 
@@ -81,22 +80,3 @@ def paginar_contactos(contactos: list, pagina: int, por_pagina: int = 10) -> tup
     inicio = (pagina - 1) * por_pagina
     fin    = inicio + por_pagina
     return contactos[inicio:fin], pagina, total_paginas
-
-
-async def _mostrar_lista(update_or_query, context, contactos: list, pagina: int, query_texto: str = "", editar: bool = False):
-    """Mostrar lista paginada. Puede enviar nuevo mensaje o editar existente."""
-    por_pagina  = 10
-    total       = len(contactos)
-    total_pags  = max(1, (total + por_pagina - 1) // por_pagina)
-    pagina      = max(1, min(pagina, total_pags))
-    inicio      = (pagina - 1) * por_pagina
-    items       = contactos[inicio:inicio + por_pagina]
-    inicio_num  = inicio + 1
-
-    texto, markup = _formato_lista_compacta(items, inicio_num, total, pagina, total_pags, query_texto)
-
-    if editar:
-        await update_or_query.edit_message_text(texto, parse_mode="Markdown", reply_markup=markup)
-    else:
-        msg = update_or_query.message if hasattr(update_or_query, 'message') else update_or_query
-        await msg.reply_text(texto, parse_mode="Markdown", reply_markup=markup)
