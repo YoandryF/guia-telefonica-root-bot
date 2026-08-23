@@ -17,73 +17,12 @@ logger = logging.getLogger(__name__)
 
 
 async def pendientes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Lista compacta de pendientes con botones por contacto — un solo mensaje."""
+    """Lista compacta de pendientes."""
     if not es_admin(update.effective_user.id):
         await update.message.reply_text("🔒 Solo el administrador.")
         return
-
-    filtro    = " ".join(context.args).lower() if context.args else None
-    contactos = db.get_contactos_pendientes()
-
-    if filtro:
-        contactos = [c for c in contactos if
-                     filtro in (c.get('nombre','') or '').lower() or
-                     filtro in (c.get('apellido','') or '').lower() or
-                     filtro in (c.get('telefono','') or '')]
-
-    if not contactos:
-        await update.message.reply_text(
-            "✅ No hay contactos pendientes" + (f' con "{filtro}"' if filtro else "")
-        )
-        return
-
-    total     = len(contactos)
-    por_pag   = 5
-    pagina    = max(0, context.user_data.get('pend_pagina', 0))
-    max_pag   = (total - 1) // por_pag
-    pagina    = min(pagina, max_pag)
-    inicio    = pagina * por_pag
-    lote      = contactos[inicio:inicio + por_pag]
-
-    # Guardar en context para paginación
-    from utils.helpers import cache_resultados_set
-    cache_resultados_set(str(update.effective_user.id) + '_pend', {
-        'contactos': contactos, 'filtro': filtro
-    })
-    context.user_data['pend_pagina'] = pagina
-
-    texto = f"⏳ *Pendientes ({inicio+1}–{min(inicio+por_pag, total)} de {total})*\n"
-    if filtro:
-        texto += f"_Filtro: \"{filtro}\"_\n"
-    texto += "\n"
-
-    botones = []
-    for c in lote:
-        nombre = f"{c['nombre']} {c['apellido']}"
-        prov   = c.get('provincia') or ''
-        mun    = c.get('municipio') or ''
-        ubi    = f" — {mun}, {prov}" if mun else (f" — {prov}" if prov else "")
-        texto += f"👤 *{nombre}*\n📱 `{c['telefono']}`{ubi}\n\n"
-        cid8   = c['id'][:8]
-        botones.append([
-            InlineKeyboardButton(f"✅ {c['telefono']}", callback_data=f"aprobar_{cid8}"),
-            InlineKeyboardButton("❌",                  callback_data=f"rechazar_{cid8}"),
-            InlineKeyboardButton("🗑",                  callback_data=f"confirmar_del_{cid8}"),
-        ])
-
-    # Navegación
-    nav = []
-    if pagina > 0:
-        nav.append(InlineKeyboardButton("⬅️ Anterior", callback_data=f"pend_pg_{pagina-1}"))
-    if inicio + por_pag < total:
-        nav.append(InlineKeyboardButton("Siguiente ➡️", callback_data=f"pend_pg_{pagina+1}"))
-    if nav:
-        botones.append(nav)
-
-    await update.message.reply_text(
-        texto, parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(botones),
-    )
+    from handlers.callbacks import _mostrar_pendientes
+    await _mostrar_pendientes(update.message, context, update.effective_user.id)
 
 
 async def aprobar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -325,26 +264,8 @@ async def reportes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not es_admin(update.effective_user.id):
         await update.message.reply_text("🔒 Solo el administrador puede usar este comando.")
         return
-
-    lista = db.get_reportes_pendientes()
-
-    if not lista:
-        await update.message.reply_text("✅ No hay reportes pendientes.")
-        return
-
-    texto = f"🚨 *Reportes pendientes ({len(lista)}):*\n\n"
-    for r in lista[:20]:
-        contacto = r.get("contactos", {})
-        nombre = f"{contacto.get('nombre', '')} {contacto.get('apellido', '')}"
-        texto += (
-            f"🆔 `{r['id'][:8]}`\n"
-            f"👤 {nombre} ({contacto.get('telefono', '')})\n"
-            f"⚠️ Motivo: {r['motivo']}\n"
-            f"💬 {r.get('descripcion', 'Sin descripción')}\n"
-            f"✅ `/desestimar {r['id'][:8]}`\n\n"
-        )
-
-    await update.message.reply_text(texto, parse_mode="Markdown")
+    from handlers.callbacks import _mostrar_reportes
+    await _mostrar_reportes(update.message, context)
 
 
 async def desestimar(update: Update, context: ContextTypes.DEFAULT_TYPE):
