@@ -14,15 +14,17 @@ def _esc(text: str) -> str:
     return text
 
 
-def formatear_contacto(contacto: dict, mostrar_id: bool = False, db=None) -> str:
-    """Ficha de contacto con diseño blockquote estilo MarkdownV2."""
-    if db is None:
-        from utils.helpers import db
+def formatear_contacto(contacto: dict, info_reportes: dict, mostrar_id: bool = False) -> str:
+    """Ficha de contacto con diseño blockquote estilo MarkdownV2.
 
-    info         = db.get_info_reportes(contacto['id'])
-    tiene_badge  = info['mostrar']
-    verificado   = info['verificado']
-    nombre       = f"{contacto['nombre']} {contacto['apellido']}".upper()
+    Args:
+        contacto:      dict con los datos del contacto
+        info_reportes: resultado de db.get_info_reportes() — separado para respetar SRP
+        mostrar_id:    mostrar el ID corto (solo admins)
+    """
+    tiene_badge = info_reportes['mostrar']
+    verificado  = info_reportes['verificado']
+    nombre      = f"{contacto['nombre']} {contacto['apellido']}".upper()
 
     # Cabecera con estado de riesgo
     if verificado:
@@ -64,7 +66,8 @@ def formatear_contacto(contacto: dict, mostrar_id: bool = False, db=None) -> str
         if verificado:
             lineas.append("\n⚠️ _Verificado como riesgoso por el administrador_")
         else:
-            lineas.append(f"\n⚠️ _Reportado {info.get('pendientes',0)} {'vez' if info.get('pendientes',0)==1 else 'veces'} por usuarios_")
+            n = info_reportes.get('pendientes', 0)
+            lineas.append(f"\n⚠️ _Reportado {n} {'vez' if n == 1 else 'veces'} por usuarios_")
     elif contacto.get('verificado'):
         lineas.append("\n✅ _Contacto verificado_")
 

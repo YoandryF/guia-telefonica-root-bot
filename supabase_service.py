@@ -43,7 +43,7 @@ class SupabaseService:
         try:
             response = (
                 self.client.table("contactos")
-                .select("id, nombre, apellido, telefono, direccion, categoria_id", count="exact")
+                .select("id, nombre, apellido, telefono, provincia, municipio, tiene_reportes, verificado, categoria_id", count="exact")
                 .eq("estado", "aprobado")
                 .is_("deleted_at", None)
                 .order("nombre")
@@ -78,14 +78,13 @@ class SupabaseService:
         try:
             response = (
                 self.client.table("contactos")
-                .select("id, nombre, apellido, telefono, direccion")
+                .select("id, nombre, apellido, telefono, provincia, municipio, tiene_reportes, verificado")
                 .eq("estado", "aprobado")
                 .is_("deleted_at", None)
                 .or_(
                     f"nombre.ilike.%{query}%,"
                     f"apellido.ilike.%{query}%,"
-                    f"telefono.ilike.%{query}%,"
-                    f"ci.ilike.%{query}%"
+                    f"telefono.ilike.%{query}%"
                 )
                 .order("nombre")
                 .limit(limite)

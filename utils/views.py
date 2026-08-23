@@ -19,8 +19,10 @@ from utils.formatters import formatear_contacto, teclado_contacto, _formato_list
 
 async def mostrar_contacto(message: Message, contacto: dict, es_admin: bool = False,
                            editar: bool = False) -> None:
-    """Muestra la ficha completa de un contacto con sus botones de acción."""
-    texto  = formatear_contacto(contacto, mostrar_id=es_admin)
+    """Muestra la ficha completa de un contacto con sus botones de acción.
+    Resuelve info_reportes aquí para que formatear_contacto sea puro (sin BD)."""
+    info_reportes = db.get_info_reportes(contacto['id'])
+    texto  = formatear_contacto(contacto, info_reportes=info_reportes, mostrar_id=es_admin)
     markup = teclado_contacto(contacto, es_admin=es_admin)
     if editar:
         await message.edit_text(texto, parse_mode="MarkdownV2", reply_markup=markup)
