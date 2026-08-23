@@ -2,7 +2,7 @@
 Flujos interactivos (ConversationHandler) para /agregar y /reportar.
 """
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 from supabase_service import SupabaseService
 
 db = SupabaseService()
@@ -396,18 +396,34 @@ REG_ADMIN_NOMBRE, REG_ADMIN_EMAIL, REG_ADMIN_PASS, REG_ADMIN_CONFIRM = range(20,
 
 
 async def reg_admin_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Entrada al flujo de registrar admin — solo owner."""
+    """Entrada al flujo de registrar admin — desde comando o botón inline."""
     from utils.helpers import es_owner
-    if not es_owner(update.effective_user.id):
-        await update.message.reply_text("🔒 Solo el owner puede registrar admins.")
+    # Puede venir de un CallbackQuery (botón) o de un comando
+    user = update.effective_user
+    if not es_owner(user.id):
+        msg = "🔒 Solo el owner puede registrar admins."
+        if update.callback_query:
+            await update.callback_query.answer(msg, show_alert=True)
+        else:
+            await update.message.reply_text(msg)
         return ConversationHandler.END
 
-    await update.message.reply_text(
-        "➕ <b>Nuevo admin — Paso 1/3</b>\n\n"
-        "¿Cuál es el <b>nombre</b> del nuevo admin?",
-        parse_mode="HTML",
-        reply_markup=ReplyKeyboardMarkup([["/cancelar"]], resize_keyboard=True),
-    )
+    # Si viene de un botón, editar ese mensaje para no dejar basura
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(
+            "➕ <b>Nuevo admin — Paso 1/3</b>\n\n"
+            "¿Cuál es el <b>nombre</b> del nuevo admin?\n\n"
+            "<i>(escribe /cancelar para salir)</i>",
+            parse_mode="HTML",
+        )
+    else:
+        await update.message.reply_text(
+            "➕ <b>Nuevo admin — Paso 1/3</b>\n\n"
+            "¿Cuál es el <b>nombre</b> del nuevo admin?",
+            parse_mode="HTML",
+            reply_markup=ReplyKeyboardMarkup([["/cancelar"]], resize_keyboard=True),
+        )
     return REG_ADMIN_NOMBRE
 
 
@@ -507,7 +523,7 @@ def get_registrar_admin_handler():
     return ConversationHandler(
         entry_points=[
             CommandHandler("registrar_admin", reg_admin_inicio),
-            # También se puede iniciar desde el botón inline
+            CallbackQueryHandler(reg_admin_inicio, pattern="^cmd_admin_registrar$"),
         ],
         states={
             REG_ADMIN_NOMBRE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_nombre)],

@@ -168,18 +168,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "cmd_admin_registrar":
+        # Manejado por get_registrar_admin_handler en conversations.py
+        # Este branch no debería ejecutarse, pero por seguridad
         if not owner:
             await query.answer("🔒 Solo el owner", show_alert=True)
-            return
-        await query.edit_message_text(
-            "➕ <b>Registrar nuevo admin</b>\n\n"
-            "Escribe /registrar_admin para iniciar el flujo paso a paso.\n\n"
-            "<i>(nombre → email → contraseña → confirmación)</i>",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔙 Volver", callback_data="cmd_admins"),
-            ]]),
-        )
         return
 
     if data == "cmd_admin_eliminar":
