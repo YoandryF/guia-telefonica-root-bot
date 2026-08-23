@@ -120,6 +120,43 @@ async def mostrar_reportes(message: Message, editar: bool = False) -> None:
 
 # ── Búsqueda ──────────────────────────────────────────────────────────────────
 
+async def mostrar_ayuda(message, user_id: int, editar: bool = False) -> None:
+    """Vista de ayuda — muestra sección admin si el usuario es admin."""
+    from utils.helpers import es_admin as _es_admin
+
+    mensaje = (
+        "📖 *Guía de uso*\n\n"
+        "*Formas de buscar:*\n\n"
+        "> 1\\. Por número: `55551234`\n"
+        "> 2\\. Por nombre: `Juan Pérez`\n"
+        "> 3\\. Varios a la vez: `55551234 56789012`\n\n"
+        "*Notas:*\n"
+        "• No importan mayúsculas ni minúsculas\n"
+        "• Los espacios en los números se ignoran\n\n"
+        "*Para agregar un contacto:*\n"
+        "> Toca ➕ Agregar contacto o escribe /agregar\n\n"
+        "*Para reportar un número sospechoso:*\n"
+        "> Busca el número y toca ⚠️ Reportar\n"
+    )
+
+    if _es_admin(user_id):
+        mensaje += (
+            "\n*Comandos admin:*\n"
+            "> /pendientes — aprobar contactos nuevos\n"
+            "> /reportes — gestionar reportes\n"
+            "> /estadisticas — ver estadísticas\n"
+            "> /exportar csv — exportar base de datos\n"
+            "> /avales — avales pendientes\n"
+            "> /reclamos — reclamos pendientes\n"
+            "> /banear — banear reportador\n"
+        )
+
+    if editar:
+        await message.edit_text(mensaje, parse_mode="MarkdownV2")
+    else:
+        await message.reply_text(mensaje, parse_mode="MarkdownV2")
+
+
 async def mostrar_lista_busqueda(message: Message, contactos: list, query_texto: str,
                                   user_id: str, pagina: int = 1,
                                   editar: bool = False) -> None:

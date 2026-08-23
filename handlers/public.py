@@ -118,35 +118,9 @@ def _esc(text: str) -> str:
 
 
 async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ayuda con ejemplos concretos y blockquotes."""
-    mensaje = (
-        "📖 *Guía de uso*\n\n"
-        "*Formas de buscar:*\n\n"
-        "> 1\\. Por número: `55551234` o `+53 5555 1234`\n"
-        "> 2\\. Por nombre: `Juan Pérez` o solo `Pérez`\n"
-        "> 3\\. Varios a la vez:\n"
-        ">      `55551234 56789012 50001234`\n"
-        ">      `55551234, 56789012, 50001234`\n\n"
-        "*Notas:*\n"
-        "• No importan mayúsculas ni minúsculas\n"
-        "• Los espacios en los números se ignoran\n"
-        "• Si hay muchos resultados se muestran en partes\n\n"
-        "*Para agregar un contacto:*\n"
-        "> Usa el botón ➕ del menú o escribe /agregar\n\n"
-        "*Para reportar un número sospechoso:*\n"
-        "> Busca el número y toca ⚠️ Reportar\n"
-    )
-
-    if es_admin(update.effective_user.id):
-        mensaje += (
-            "\n*Comandos admin:*\n"
-            "> /pendientes — aprobar contactos nuevos\n"
-            "> /reportes — gestionar reportes\n"
-            "> /estadisticas — ver estadísticas\n"
-            "> /exportar csv — exportar base de datos\n"
-        )
-
-    await update.message.reply_text(mensaje, parse_mode="MarkdownV2")
+    """Ayuda — delega a la vista compartida que detecta si es admin."""
+    from utils.views import mostrar_ayuda
+    await mostrar_ayuda(update.message, update.effective_user.id)
 
 
 async def handle_texto_libre(update: Update, context: ContextTypes.DEFAULT_TYPE):

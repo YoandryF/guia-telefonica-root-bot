@@ -100,18 +100,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     elif data == "cmd_ayuda":
-        await query.edit_message_text(
-            "📖 *Cómo usar la Guía Telefónica*\n\n"
-            "Escribe directamente en el chat:\n"
-            "• Un *número de teléfono* para buscarlo\n"
-            "• Un *nombre* para buscar personas\n\n"
-            "Botones disponibles al ver un contacto:\n"
-            "• 📲 Abrir en Telegram o WhatsApp\n"
-            "• ⚠️ Reportar si es sospechoso\n"
-            "• 👍 Avalar si es confiable\n\n"
-            "➕ Usa /agregar para registrar un contacto nuevo.",
-            parse_mode="Markdown",
-        )
+        from utils.views import mostrar_ayuda
+        await mostrar_ayuda(query.message, query.from_user.id, editar=True)
         return
 
     elif data == "cmd_misreportes":
