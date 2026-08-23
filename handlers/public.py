@@ -110,13 +110,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-def _esc(text: str) -> str:
-    """Escapa caracteres especiales para MarkdownV2."""
-    for ch in r'_*[]()~`>#+-=|{}.!\\':
-        text = text.replace(ch, f'\\{ch}')
-    return text
-
-
 async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ayuda — delega a la vista compartida que detecta si es admin."""
     from utils.views import mostrar_ayuda
