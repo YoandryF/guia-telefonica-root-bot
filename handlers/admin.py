@@ -127,7 +127,8 @@ async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
-        contactos = db.get_contactos_aprobados()[-5:]
+        # Mostrar los últimos 5 aprobados — query con límite, sin cargar todo en memoria
+        contactos, _ = db.get_contactos_aprobados(limite=5, offset=0)
         if not contactos:
             await update.message.reply_text("No hay contactos.")
             return
@@ -517,60 +518,6 @@ async def reclamos(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
-
-
-async def reportar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Reportar un contacto. Uso: /reportar id motivo"""
-    if len(context.args) < 2:
-        await update.message.reply_text(
-            "⚠️ *Reportar contacto*\n\n"
-            "Uso: `/reportar ID motivo`\n\n"
-            "Motivos válidos:\n"
-            "• `numero_incorrecto`\n"
-            "• `no_existe`\n"
-            "• `spam`\n"
-            "• `duplicado`\n"
-            "• `otro`\n\n"
-            "Ejemplo: `/reportar abc123 spam`",
-            parse_mode="Markdown",
-        )
-        return
-
-    contacto_id = context.args[0]
-    motivo = context.args[1]
-    descripcion = " ".join(context.args[2:]) if len(context.args) > 2 else None
-
-    motivos_validos = ['numero_incorrecto', 'no_existe', 'spam', 'duplicado', 'otro']
-    if motivo not in motivos_validos:
-        await update.message.reply_text(f"⚠️ Motivo inválido. Usa uno de: {', '.join(motivos_validos)}")
-        return
-
-    contacto = db.buscar_por_id_o_telefono(contacto_id)
-    if not contacto:
-        await update.message.reply_text("❌ Contacto no encontrado.")
-        return
-
-    resultado = db.reportar_contacto(
-        contacto_id=contacto['id'],
-        motivo=motivo,
-        descripcion=descripcion,
-        reportado_por=str(update.effective_user.id),
-    )
-
-    if resultado.get("error"):
-        await update.message.reply_text(f"❌ Error: {resultado['error']}")
-    else:
-        await update.message.reply_text("⚠️ Reporte enviado. Gracias por informar.")
-
-        if ADMIN_CHAT_ID:
-            try:
-                await context.bot.send_message(
-                    chat_id=ADMIN_CHAT_ID,
-                    text=f"🚨 *Nuevo reporte*\n\nContacto: `{contacto_id}`\nMotivo: {motivo}\nPor: {update.effective_user.first_name}\n\nUsa /reportes para ver todos",
-                    parse_mode="Markdown",
-                )
-            except Exception:
-                pass
 
 
 async def avales(update: Update, context: ContextTypes.DEFAULT_TYPE):
