@@ -117,7 +117,6 @@ def main():
     app = create_app()
     if not app:
         return
-    # Registrar comandos en el menú de Telegram al arrancar
     app.post_init = _set_commands
     logger.info("Iniciando bot en modo polling")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

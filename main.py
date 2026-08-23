@@ -1,7 +1,7 @@
 """
 Bot en thread principal, Flask en thread secundario.
 """
-import os, threading, logging, asyncio
+import os, threading, logging
 from dotenv import load_dotenv
 from flask import Flask, jsonify
 import requests
@@ -150,18 +150,11 @@ def main():
     if not telegram_app:
         return
 
-    logger.info("✅ Bot polling iniciado")
+    # _set_commands se registra via post_init — PTB lo llama dentro de su propio loop
+    telegram_app.post_init = _set_commands
 
-    # Crear un event loop nuevo y persistente para todo el ciclo de vida del bot.
-    # asyncio.run() destruye el loop al terminar — por eso _set_commands y
-    # run_polling deben correr en el MISMO loop, no en loops separados.
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(_set_commands(telegram_app))
-        telegram_app.run_polling(drop_pending_updates=False)
-    finally:
-        loop.close()
+    logger.info("✅ Bot polling iniciado")
+    telegram_app.run_polling(drop_pending_updates=False)
 
 if __name__ == "__main__":
     main()
