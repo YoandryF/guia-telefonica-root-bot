@@ -17,12 +17,13 @@ logger = logging.getLogger(__name__)
 
 
 async def pendientes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Lista compacta de pendientes."""
+    """Lista de contactos pendientes."""
     if not es_admin(update.effective_user.id):
         await update.message.reply_text("🔒 Solo el administrador.")
         return
-    from handlers.callbacks import _mostrar_pendientes
-    await _mostrar_pendientes(update.message, context, update.effective_user.id)
+    from utils.views import mostrar_pendientes
+    pagina = context.user_data.get('pend_pagina', 0)
+    await mostrar_pendientes(update.message, context, update.effective_user.id, pagina=pagina)
 
 
 async def aprobar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -264,8 +265,8 @@ async def reportes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not es_admin(update.effective_user.id):
         await update.message.reply_text("🔒 Solo el administrador puede usar este comando.")
         return
-    from handlers.callbacks import _mostrar_reportes
-    await _mostrar_reportes(update.message, context)
+    from utils.views import mostrar_reportes
+    await mostrar_reportes(update.message)
 
 
 async def desestimar(update: Update, context: ContextTypes.DEFAULT_TYPE):

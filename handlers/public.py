@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 
 from utils.helpers import db, ADMIN_CHAT_ID, es_admin, _mostrar_lista, cache_resultados_get, cache_resultados_set
 from utils.formatters import formatear_contacto, _formato_lista_compacta, teclado_contacto, _esc
+from utils.views import mostrar_contacto, mostrar_lista_busqueda
 
 logger = logging.getLogger(__name__)
 

@@ -9,91 +9,10 @@ from telegram.ext import ContextTypes
 
 from utils.helpers import db, es_admin, _mostrar_lista, cache_resultados_get, cache_resultados_set
 from utils.formatters import _formato_lista_compacta, formatear_contacto, teclado_contacto
+from utils.views import mostrar_pendientes, mostrar_reportes, mostrar_contacto
 
 logger = logging.getLogger(__name__)
 
-
-async def _mostrar_pendientes(message, context, user_id: int, editar: bool = False):
-    """Muestra pendientes directamente sobre un mensaje — usado desde botón y comando."""
-    contactos = db.get_contactos_pendientes()
-    if not contactos:
-        txt = "✅ No hay contactos pendientes."
-        if editar:
-            await message.edit_text(txt)
-        else:
-            await message.reply_text(txt)
-        return
-
-    total   = len(contactos)
-    por_pag = 5
-    pagina  = context.user_data.get('pend_pagina', 0)
-    inicio  = pagina * por_pag
-    lote    = contactos[inicio:inicio + por_pag]
-
-    cache_resultados_set(str(user_id) + '_pend', {'contactos': contactos, 'filtro': None})
-
-    texto = f"⏳ *Pendientes ({inicio+1}–{min(inicio+por_pag, total)} de {total})*\n\n"
-    botones = []
-    for c in lote:
-        nombre = f"{c['nombre']} {c['apellido']}"
-        prov   = c.get('provincia') or ''
-        mun    = c.get('municipio') or ''
-        ubi    = f" — {mun}, {prov}" if mun else (f" — {prov}" if prov else "")
-        texto += f"👤 *{nombre}*\n📱 `{c['telefono']}`{ubi}\n\n"
-        cid8   = c['id'][:8]
-        botones.append([
-            InlineKeyboardButton(f"✅ {c['telefono']}", callback_data=f"aprobar_{cid8}"),
-            InlineKeyboardButton("❌", callback_data=f"rechazar_{cid8}"),
-            InlineKeyboardButton("🗑", callback_data=f"confirmar_del_{cid8}"),
-        ])
-    nav = []
-    if pagina > 0:
-        nav.append(InlineKeyboardButton("⬅️", callback_data=f"pend_pg_{pagina-1}"))
-    if inicio + por_pag < total:
-        nav.append(InlineKeyboardButton("➡️", callback_data=f"pend_pg_{pagina+1}"))
-    if nav:
-        botones.append(nav)
-
-    markup = InlineKeyboardMarkup(botones)
-    if editar:
-        await message.edit_text(texto, parse_mode="Markdown", reply_markup=markup)
-    else:
-        await message.reply_text(texto, parse_mode="Markdown", reply_markup=markup)
-
-
-async def _mostrar_reportes(message, context, editar: bool = False):
-    """Muestra reportes pendientes directamente — usado desde botón y comando."""
-    lista = db.get_reportes_pendientes()
-    if not lista:
-        txt = "✅ No hay reportes pendientes."
-        if editar:
-            await message.edit_text(txt)
-        else:
-            await message.reply_text(txt)
-        return
-
-    texto = f"🚨 *Reportes pendientes ({len(lista)}):*\n\n"
-    botones = []
-    for r in lista[:10]:
-        contacto = r.get("contactos", {})
-        nombre   = f"{contacto.get('nombre', '')} {contacto.get('apellido', '')}"
-        texto += (
-            f"👤 {nombre} — `{contacto.get('telefono', '')}`\n"
-            f"⚠️ {r['motivo']}"
-            + (f" — {r.get('descripcion','')[:40]}" if r.get('descripcion') else "")
-            + f"\n\n"
-        )
-        cid8 = r['id'][:8]
-        botones.append([
-            InlineKeyboardButton(f"✅ Aprobar — {contacto.get('telefono','')}", callback_data=f"aprobar_rep_{cid8}"),
-            InlineKeyboardButton("🗑 Desestimar", callback_data=f"desestimar_rep_{cid8}"),
-        ])
-
-    markup = InlineKeyboardMarkup(botones) if botones else None
-    if editar:
-        await message.edit_text(texto, parse_mode="Markdown", reply_markup=markup)
-    else:
-        await message.reply_text(texto, parse_mode="Markdown", reply_markup=markup)
 
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -219,10 +138,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not admin:
             await query.answer("🔒 Solo admins", show_alert=True)
             return
+        pagina = context.user_data.get('pend_pagina', 0)
         if data == "cmd_pendientes":
-            await _mostrar_pendientes(query.message, context, query.from_user.id, editar=True)
+            await mostrar_pendientes(query.message, context, query.from_user.id,
+                                     pagina=pagina, editar=True)
         else:
-            await _mostrar_reportes(query.message, context, editar=True)
+            await mostrar_reportes(query.message, editar=True)
         return
 
     # Ver detalle de un contacto desde la lista (botón "Ver")
@@ -232,9 +153,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not contacto:
             await query.answer("❌ Contacto no encontrado", show_alert=True)
             return
-        detalle = formatear_contacto(contacto, mostrar_id=admin, db=db)
-        markup  = teclado_contacto(contacto, es_admin=admin)
-        await query.edit_message_text(detalle, parse_mode="MarkdownV2", reply_markup=markup)
+        await mostrar_contacto(query.message, contacto, es_admin=admin, editar=True)
         return
 
     # Reportar desde botón en detalle de contacto
