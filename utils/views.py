@@ -276,16 +276,21 @@ async def mostrar_admins(message: Message, editar: bool = False) -> None:
                       markup, editar=editar)
         return
 
-    texto = "🔐 Admins registrados:\n\n"
+    texto = "<b>🔐 Admins registrados</b>\n"
+    texto += f"<i>{len(admins)} administrador{'es' if len(admins) != 1 else ''}</i>\n"
+    texto += "——————————————————\n\n"
     for a in admins:
-        estado = "✅" if a.get("activo") else "❌"
-        nombre = a.get('nombre_admin') or '?'
-        email  = a.get('email', '')
-        texto += f"{estado} {nombre} — {email}\n"
-    texto += "\nUsa /registrar_admin o /eliminar_admin para gestionar."
+        estado = "🟢" if a.get("activo") else "🔴"
+        nombre = _html.escape(a.get('nombre_admin') or '?')
+        email  = _html.escape(a.get('email', ''))
+        chat   = a.get('chat_id_telegram') or '—'
+        texto += f"{estado} <b>{nombre}</b>\n"
+        texto += f"   📧 <code>{email}</code>\n"
+        texto += f"   💬 Telegram ID: <code>{chat}</code>\n\n"
+    texto += "<i>Usa /registrar_admin o /eliminar_admin para gestionar.</i>"
 
     markup = InlineKeyboardMarkup([_btn_inicio()])
-    await _enviar(message, texto, markup, parse_mode=None, editar=editar)
+    await _enviar(message, texto, markup, parse_mode="HTML", editar=editar)
 
 
 # ── Mis reportes ──────────────────────────────────────────────────────────────
