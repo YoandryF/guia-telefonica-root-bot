@@ -398,7 +398,14 @@ REG_ADMIN_NOMBRE, REG_ADMIN_EMAIL, REG_ADMIN_PASS, REG_ADMIN_CONFIRM = range(20,
 def _cancelar_btn() -> InlineKeyboardMarkup:
     """Botón cancelar inline — presente en cada paso del flujo."""
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("❌ Cancelar", callback_data="reg_admin_cancelar")
+        InlineKeyboardButton("🔙 Volver", callback_data="reg_admin_cancelar")
+    ]])
+
+
+def _cancelar_btn_con_progreso() -> InlineKeyboardMarkup:
+    """Botón cancelar cuando ya hay datos escritos — pide confirmación."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔙 Cancelar registro", callback_data="reg_admin_cancelar_confirmar")
     ]])
 
 
@@ -443,7 +450,7 @@ async def reg_admin_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ Nombre: <b>{nombre}</b>\n\n"
         "<b>Paso 2/3</b> — ¿Cuál es el <b>email</b>?",
         parse_mode="HTML",
-        reply_markup=_cancelar_btn(),
+        reply_markup=_cancelar_btn_con_progreso(),
     )
     return REG_ADMIN_EMAIL
 
@@ -453,7 +460,7 @@ async def reg_admin_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if '@' not in email or '.' not in email:
         await update.message.reply_text(
             "⚠️ Email inválido. Intenta de nuevo:",
-            reply_markup=_cancelar_btn(),
+            reply_markup=_cancelar_btn_con_progreso(),
         )
         return REG_ADMIN_EMAIL
     context.user_data['reg_admin_email'] = email
@@ -462,7 +469,7 @@ async def reg_admin_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<b>Paso 3/3</b> — Escribe una <b>contraseña temporal</b>\n"
         "<i>(mínimo 8 caracteres — el mensaje se borrará automáticamente)</i>",
         parse_mode="HTML",
-        reply_markup=_cancelar_btn(),
+        reply_markup=_cancelar_btn_con_progreso(),
     )
     return REG_ADMIN_PASS
 
@@ -541,35 +548,91 @@ async def reg_admin_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def reg_admin_cancelar_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancelar el flujo desde cualquier paso via botón inline."""
+    """Cancelar sin progreso — vuelve directo a la lista de admins."""
     query = update.callback_query
     await query.answer()
     context.user_data.pop('reg_admin_nombre', None)
     context.user_data.pop('reg_admin_email', None)
     context.user_data.pop('reg_admin_pass', None)
-    await query.edit_message_text("❌ Registro cancelado.")
     from utils.views import mostrar_admins
-    await mostrar_admins(query.message)
+    await mostrar_admins(query.message, editar=True)
     return ConversationHandler.END
 
 
+async def reg_admin_cancelar_confirmar_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancelar con progreso — pide confirmación antes de descartar."""
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "⚠️ <b>¿Cancelar el registro?</b>\n\n"
+        "Se perderán los datos que ya escribiste.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Sí, cancelar", callback_data="reg_admin_cancelar"),
+            InlineKeyboardButton("↩️ Seguir",       callback_data="reg_admin_seguir"),
+        ]]),
+    )
+    return REG_ADMIN_CONFIRM  # mantener el estado para que el handler siga activo
+
+
+async def reg_admin_seguir_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Retomar el flujo después de decidir no cancelar — vuelve al último paso."""
+    query = update.callback_query
+    await query.answer()
+    nombre = context.user_data.get('reg_admin_nombre', '')
+    email  = context.user_data.get('reg_admin_email', '')
+
+    if not email:
+        # Volver al paso 2
+        await query.edit_message_text(
+            f"✅ Nombre: <b>{nombre}</b>\n\n"
+            "<b>Paso 2/3</b> — ¿Cuál es el <b>email</b>?",
+            parse_mode="HTML",
+            reply_markup=_cancelar_btn_con_progreso(),
+        )
+        return REG_ADMIN_EMAIL
+    else:
+        # Volver al paso 3
+        await query.edit_message_text(
+            f"✅ Email: <code>{email}</code>\n\n"
+            "<b>Paso 3/3</b> — Escribe la <b>contraseña temporal</b>\n"
+            "<i>(mínimo 8 caracteres)</i>",
+            parse_mode="HTML",
+            reply_markup=_cancelar_btn_con_progreso(),
+        )
+        return REG_ADMIN_PASS
+
+
 def get_registrar_admin_handler():
+    cancelar_cb    = CallbackQueryHandler(reg_admin_cancelar_cb,           pattern="^reg_admin_cancelar$")
+    confirmar_canc = CallbackQueryHandler(reg_admin_cancelar_confirmar_cb, pattern="^reg_admin_cancelar_confirmar$")
+    seguir_cb      = CallbackQueryHandler(reg_admin_seguir_cb,             pattern="^reg_admin_seguir$")
+
     return ConversationHandler(
         entry_points=[
             CommandHandler("registrar_admin", reg_admin_inicio),
             CallbackQueryHandler(reg_admin_inicio, pattern="^cmd_admin_registrar$"),
         ],
         states={
-            REG_ADMIN_NOMBRE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_nombre)],
-            REG_ADMIN_EMAIL:   [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_email)],
-            REG_ADMIN_PASS:    [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_pass)],
+            REG_ADMIN_NOMBRE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_nombre),
+                cancelar_cb,
+            ],
+            REG_ADMIN_EMAIL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_email),
+                confirmar_canc, cancelar_cb, seguir_cb,
+            ],
+            REG_ADMIN_PASS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, reg_admin_pass),
+                confirmar_canc, cancelar_cb, seguir_cb,
+            ],
             REG_ADMIN_CONFIRM: [
                 CallbackQueryHandler(reg_admin_confirm,  pattern="^reg_admin_confirmar$"),
-                CallbackQueryHandler(reg_admin_cancelar_cb, pattern="^reg_admin_cancelar$"),
+                confirmar_canc, cancelar_cb, seguir_cb,
             ],
         },
         fallbacks=[
             CommandHandler("cancelar", cancelar),
-            CallbackQueryHandler(reg_admin_cancelar_cb, pattern="^reg_admin_cancelar$"),
+            cancelar_cb,
         ],
     )
