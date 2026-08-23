@@ -287,7 +287,106 @@ async def mostrar_mis_reportes(message: Message, user_id: str,
         await _enviar(message, f"❌ Error: {e}", markup, editar=editar)
 
 
-# ── Lista de búsqueda ─────────────────────────────────────────────────────────
+# ── Configuración ─────────────────────────────────────────────────────────────
+
+async def mostrar_config(message: Message, pagina: int = 0,
+                         seleccion: int | None = None,
+                         editar: bool = False) -> None:
+    """Vista de configuración — lista paginada con botones de selección y edición.
+
+    Layout inspirado en bots musicales:
+      Lista numerada de claves (10 por página)
+      Botones 1-10 para seleccionar una clave
+      ⬅ página anterior  |  ➡ página siguiente
+      Si hay selección activa: muestra detalle + botón ✏️ Editar
+      🏠 Inicio siempre al final
+    """
+    POR_PAG = 10
+
+    try:
+        resp = db.client.table("configuracion").select(
+            "clave, valor, descripcion"
+        ).order("clave").execute()
+        configs = resp.data or []
+    except Exception as e:
+        markup = InlineKeyboardMarkup([_btn_inicio()])
+        await _enviar(message, f"❌ Error cargando configs: {e}", markup, editar=editar)
+        return
+
+    total      = len(configs)
+    total_pags = max(1, (total + POR_PAG - 1) // POR_PAG)
+    pagina     = max(0, min(pagina, total_pags - 1))
+    inicio     = pagina * POR_PAG
+    lote       = configs[inicio:inicio + POR_PAG]
+
+    # ── Texto: lista numerada ─────────────────────────────────────────────────
+    sel_cfg = None
+    if seleccion is not None and 0 <= seleccion < len(lote):
+        sel_cfg = lote[seleccion]
+
+    texto  = f"⚙️ *Configuración del sistema*\n"
+    texto += f"_Página {pagina+1} de {total_pags} — {total} parámetros_\n\n"
+
+    for i, c in enumerate(lote):
+        n     = i + 1
+        clave = c['clave']
+        valor = c.get('valor', '—')
+        # Resaltar el seleccionado
+        if sel_cfg and c['clave'] == sel_cfg['clave']:
+            texto += f"▶️ *{n}\\. {clave}*\n"
+            texto += f"    Valor: `{valor}`\n"
+            desc = c.get('descripcion') or ''
+            if desc:
+                texto += f"    _{desc}_\n"
+            texto += "\n"
+        else:
+            texto += f"*{n}\\.* `{clave}` = `{valor}`\n"
+
+    # ── Botones: números 1-N para seleccionar ────────────────────────────────
+    botones = []
+
+    # Fila(s) de números — máx 5 por fila
+    nums_fila = []
+    for i in range(len(lote)):
+        n = i + 1
+        # Marcar el seleccionado con un símbolo distinto
+        label = f"[{n}]" if sel_cfg and lote[i]['clave'] == sel_cfg['clave'] else str(n)
+        nums_fila.append(InlineKeyboardButton(
+            label, callback_data=f"cfg_sel_{pagina}_{i}"
+        ))
+        if len(nums_fila) == 5:
+            botones.append(nums_fila)
+            nums_fila = []
+    if nums_fila:
+        botones.append(nums_fila)
+
+    # Fila de edición — solo si hay selección
+    if sel_cfg:
+        botones.append([
+            InlineKeyboardButton(
+                f"✏️ Editar: {sel_cfg['clave'][:20]}",
+                callback_data=f"cfg_edit_{sel_cfg['clave']}"
+            )
+        ])
+
+    # Paginación
+    nav = []
+    if pagina > 0:
+        nav.append(InlineKeyboardButton("◀️", callback_data=f"cfg_pg_{pagina-1}"))
+    nav.append(InlineKeyboardButton(
+        f"· {pagina+1}/{total_pags} ·", callback_data="noop"
+    ))
+    if pagina < total_pags - 1:
+        nav.append(InlineKeyboardButton("▶️", callback_data=f"cfg_pg_{pagina+1}"))
+    botones.append(nav)
+
+    # Inicio
+    botones.append(_btn_inicio())
+
+    await _enviar(message, texto, InlineKeyboardMarkup(botones),
+                  parse_mode="MarkdownV2", editar=editar)
+
+
 
 async def mostrar_lista_busqueda(message: Message, contactos: list, query_texto: str,
                                   user_id: str, pagina: int = 1,

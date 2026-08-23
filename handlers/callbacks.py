@@ -151,14 +151,36 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not _es_owner(query.from_user.id):
             await query.answer("🔒 Solo el owner", show_alert=True)
             return
-        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-        await query.edit_message_text(
-            "⚙️ *Configuración*\n\nUsa /config para ver y editar la configuración del sistema.",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio")
-            ]]),
-        )
+        from utils.views import mostrar_config
+        await mostrar_config(query.message, pagina=0, editar=True)
+        return
+
+    elif data.startswith("cfg_pg_"):
+        from utils.helpers import es_owner as _es_owner
+        if not _es_owner(query.from_user.id):
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        pagina = int(data.replace("cfg_pg_", ""))
+        from utils.views import mostrar_config
+        await mostrar_config(query.message, pagina=pagina, editar=True)
+        return
+
+    elif data.startswith("cfg_sel_"):
+        from utils.helpers import es_owner as _es_owner
+        if not _es_owner(query.from_user.id):
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        # formato: cfg_sel_{pagina}_{indice}
+        partes  = data.split("_")
+        pagina  = int(partes[2])
+        indice  = int(partes[3])
+        from utils.views import mostrar_config
+        await mostrar_config(query.message, pagina=pagina, seleccion=indice, editar=True)
+        return
+
+    elif data == "noop":
+        # Botón decorativo (contador de páginas) — sin acción
+        await query.answer()
         return
 
     elif data == "cmd_exportar":
