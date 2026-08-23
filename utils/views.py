@@ -350,20 +350,22 @@ async def mostrar_config(message: Message, pagina: int = 0,
         sel_cfg = lote[seleccion]
 
     texto  = f"⚙️ Configuración del sistema\n"
-    texto += f"Página {pagina+1} de {total_pags} — {total} parámetros\n\n"
+    texto += f"Página {pagina+1} de {total_pags} — {total} parámetros\n"
+    texto += "─" * 32 + "\n\n"
 
     for i, c in enumerate(lote):
         n     = i + 1
-        clave = c['clave']
         valor = c.get('valor', '—')
-        desc  = (c.get('descripcion') or clave).strip()  # descripcion o clave si no hay
+        desc  = (c.get('descripcion') or c['clave']).strip()
         if sel_cfg and c['clave'] == sel_cfg['clave']:
-            texto += f"▶ {n}. {desc}\n"
-            texto += f"   Valor actual: {valor}\n"
-            texto += f"   Clave: {clave}\n"
-            texto += "\n"
+            # Seleccionado: resaltado con flecha y separado visualmente
+            texto += f"▶  {n}. {desc}\n"
+            texto += f"      └─ Valor:  {valor}\n"
+            texto += f"      └─ Clave:  {c['clave']}\n\n"
         else:
-            texto += f"{n}. {desc}: {valor}\n"
+            # Normal: descripción en una línea, valor al final con separador
+            texto += f"{n:>2}. {desc}\n"
+            texto += f"      → {valor}\n"
 
     # ── Botones: números 1-N para seleccionar ────────────────────────────────
     botones = []
