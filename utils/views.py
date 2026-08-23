@@ -46,13 +46,21 @@ def _btn_inicio() -> list:
 
 async def _enviar(message: Message, texto: str, markup: InlineKeyboardMarkup,
                   parse_mode: str | None = "Markdown", editar: bool = False) -> None:
-    """Enviar o editar un mensaje según el contexto."""
+    """Enviar o editar un mensaje según el contexto.
+    parse_mode=None envía sin formato — siempre pasa parse_mode explícitamente
+    al editar para evitar que Telegram herede el modo del mensaje anterior.
+    """
     kwargs = {"reply_markup": markup}
-    if parse_mode:
-        kwargs["parse_mode"] = parse_mode
+    # Siempre pasar parse_mode explícitamente (incluso vacío) para evitar
+    # que Telegram herede el parse_mode del mensaje original al editar
+    kwargs["parse_mode"] = parse_mode or ""
     if editar:
         await message.edit_text(texto, **kwargs)
     else:
+        if parse_mode:
+            kwargs["parse_mode"] = parse_mode
+        else:
+            kwargs.pop("parse_mode", None)
         await message.reply_text(texto, **kwargs)
 
 
