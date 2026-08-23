@@ -349,23 +349,23 @@ async def mostrar_config(message: Message, pagina: int = 0,
     if seleccion is not None and 0 <= seleccion < len(lote):
         sel_cfg = lote[seleccion]
 
-    texto  = f"⚙️ Configuración del sistema\n"
-    texto += f"Página {pagina+1} de {total_pags} — {total} parámetros\n"
-    texto += "─" * 32 + "\n\n"
+    texto  = "*⚙️ Configuración del sistema*\n"
+    texto += f"_Página {pagina+1} de {total_pags} — {total} parámetros_\n"
+    texto += "——————————————————\n\n"
 
     for i, c in enumerate(lote):
         n     = i + 1
         valor = c.get('valor', '—')
+        # Descripción: escapar solo * y _ para no romper Markdown
         desc  = (c.get('descripcion') or c['clave']).strip()
+        desc_safe = desc.replace('*', '').replace('_', ' ').replace('`', '')
         if sel_cfg and c['clave'] == sel_cfg['clave']:
-            # Seleccionado: resaltado con flecha y separado visualmente
-            texto += f"▶  {n}. {desc}\n"
-            texto += f"      └─ Valor:  {valor}\n"
-            texto += f"      └─ Clave:  {c['clave']}\n\n"
+            texto += f"▶ *{n}. {desc_safe}*\n"
+            texto += f"   Valor: `{valor}`\n"
+            texto += f"   _Clave: {c['clave']}_\n\n"
         else:
-            # Normal: descripción en una línea, valor al final con separador
-            texto += f"{n:>2}. {desc}\n"
-            texto += f"      → {valor}\n"
+            texto += f"*{n}.* {desc_safe}\n"
+            texto += f"   `{valor}`\n"
 
     # ── Botones: números 1-N para seleccionar ────────────────────────────────
     botones = []
@@ -409,7 +409,7 @@ async def mostrar_config(message: Message, pagina: int = 0,
     botones.append(_btn_inicio())
 
     await _enviar(message, texto, InlineKeyboardMarkup(botones),
-                  parse_mode=None, editar=editar)
+                  parse_mode="Markdown", editar=editar)
 
 
 async def mostrar_editar_config(message: Message, clave: str,
