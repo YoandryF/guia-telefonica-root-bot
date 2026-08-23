@@ -78,64 +78,53 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     elif data == "cmd_listar":
-        por_pagina = 10
-        contactos, total = db.get_contactos_aprobados(limite=por_pagina, offset=0)
-        if not contactos:
-            await query.edit_message_text("📭 No hay contactos aprobados aún.")
-            return
-        chat_id = str(query.from_user.id)
-        cache_resultados_set(chat_id, {'tipo': 'listar', 'total': total, 'por_pagina': por_pagina})
-        total_pags = max(1, (total + por_pagina - 1) // por_pagina)
-        texto, markup = _formato_lista_compacta(contactos, 1, total, 1, total_pags, '')
-        await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=markup)
+        # Eliminado — la lista ya no está disponible como función pública
+        await query.answer("Escribe directamente para buscar.", show_alert=False)
         return
 
     elif data == "cmd_agregar":
         await query.edit_message_text(
-            "✏️ Para registrar un contacto usa:\n\n"
-            "`/agregar Nombre, Apellido, Teléfono`\n\n"
-            "Ejemplo: `/agregar Juan, Pérez, 55551234`",
+            "✏️ *Registrar contacto*\n\n"
+            "Escribe /agregar para iniciar el flujo interactivo,\n"
+            "o en formato rápido:\n\n"
+            "`/agregar Nombre, Apellido, Teléfono, Provincia, Municipio`",
             parse_mode="Markdown",
         )
-        return
-
-    elif data == "cmd_categorias":
-        cats = db.get_categorias()
-        if not cats:
-            await query.edit_message_text("📂 No hay categorías configuradas.")
-            return
-        texto = "📂 *Categorías disponibles:*\n\n"
-        for cat in cats:
-            texto += f"  {cat.get('icono', '📋')} {cat['nombre']}\n"
-        await query.edit_message_text(texto, parse_mode="Markdown")
-        return
-
-    elif data == "cmd_miscontactos":
-        chat_id = str(query.from_user.id)
-        contactos = db.get_contactos_por_creador(chat_id)
-        if not contactos:
-            await query.edit_message_text("📭 No has registrado contactos aún.\n\nUsa /agregar para registrar uno.")
-            return
-        texto = f"📌 *Tus contactos ({len(contactos)}):*\n\n"
-        for c in contactos:
-            emoji = {"aprobado": "✅", "pendiente": "⏳", "rechazado": "❌"}.get(c["estado"], "❓")
-            texto += f"{emoji} *{c['nombre']} {c['apellido']}* — `{c['telefono']}`\n"
-        await query.edit_message_text(texto, parse_mode="Markdown")
         return
 
     elif data == "cmd_ayuda":
         await query.edit_message_text(
-            "📖 *Cómo usar la Guía Telefónica:*\n\n"
-            "🔍 Escribe el nombre o número directamente\n"
-            "📋 /listar — ver todos\n"
-            "➕ /agregar — registrar contacto\n"
-            "📌 /miscontactos — mis registros\n"
-            "⚠️ /reportar — reportar número\n"
-            "👍 /avalar — avalar contacto\n"
-            "📂 /categorias — ver categorías\n"
-            "🚫 /listanegra — contactos reportados\n",
+            "📖 *Cómo usar la Guía Telefónica*\n\n"
+            "Escribe directamente en el chat:\n"
+            "• Un *número de teléfono* para buscarlo\n"
+            "• Un *nombre* para buscar personas\n\n"
+            "Botones disponibles al ver un contacto:\n"
+            "• 📲 Abrir en Telegram o WhatsApp\n"
+            "• ⚠️ Reportar si es sospechoso\n"
+            "• 👍 Avalar si es confiable\n\n"
+            "➕ Usa /agregar para registrar un contacto nuevo.",
             parse_mode="Markdown",
         )
+        return
+
+    elif data == "cmd_misreportes":
+        chat_id_str = str(query.from_user.id)
+        try:
+            resp = db.client.table("reportes").select(
+                "id, motivo, created_at, contactos(nombre, apellido, telefono)"
+            ).eq("reportado_por", chat_id_str).order("created_at", desc=True).limit(10).execute()
+            if not resp.data:
+                await query.edit_message_text("📭 No has enviado reportes aún.")
+                return
+            texto = f"📌 *Tus reportes ({len(resp.data)}):*\n\n"
+            for r in resp.data:
+                c     = r.get('contactos') or {}
+                fecha = (r.get('created_at') or '')[:10]
+                texto += f"⚠️ {c.get('nombre','')} {c.get('apellido','')} — `{c.get('telefono','')}`\n"
+                texto += f"   Motivo: {r['motivo']} — {fecha}\n\n"
+            await query.edit_message_text(texto, parse_mode="Markdown")
+        except Exception as e:
+            await query.edit_message_text(f"❌ Error: {e}")
         return
 
     elif data in ("cmd_pendientes", "cmd_reportes"):
