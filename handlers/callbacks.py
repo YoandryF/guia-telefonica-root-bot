@@ -144,7 +144,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         detalle = formatear_contacto(contacto, mostrar_id=admin, db=db)
         markup  = teclado_contacto(contacto, es_admin=admin)
-        await query.edit_message_text(detalle, parse_mode="Markdown", reply_markup=markup)
+        await query.edit_message_text(detalle, parse_mode="MarkdownV2", reply_markup=markup)
         return
 
     # Reportar desde botón en detalle de contacto

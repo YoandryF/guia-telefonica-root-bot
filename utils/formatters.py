@@ -1,81 +1,89 @@
 """
 Formatting utilities for contact display.
 """
-
+import re
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
+def _esc(text: str) -> str:
+    """Escapa caracteres especiales para MarkdownV2."""
+    if not text:
+        return ''
+    for ch in r'_*[]()~`>#+-=|{}.!\\':
+        text = text.replace(ch, f'\\{ch}')
+    return text
+
+
 def formatear_contacto(contacto: dict, mostrar_id: bool = False, db=None) -> str:
-    """Formatea un contacto con todos sus datos disponibles."""
+    """Ficha de contacto con diseño blockquote estilo MarkdownV2."""
     if db is None:
         from utils.helpers import db
 
-    info = db.get_info_reportes(contacto['id'])
-    mostrar_badge = info['mostrar']
-    verificado    = info['verificado']
-    warning       = " ⚠️" if mostrar_badge else ""
-    nombre        = f"{contacto['nombre']} {contacto['apellido']}".upper()
+    info         = db.get_info_reportes(contacto['id'])
+    tiene_badge  = info['mostrar']
+    verificado   = info['verificado']
+    nombre       = f"{contacto['nombre']} {contacto['apellido']}".upper()
 
-    texto = f"📋 *Detalles del contacto:*{warning}\n\n"
+    # Cabecera con estado de riesgo
+    if verificado:
+        estado = "⛔ *RIESGO CONFIRMADO*"
+    elif tiene_badge:
+        n_rep  = info.get('pendientes', 0)
+        estado = f"🔴 *REPORTADO* \\— {n_rep} {'reporte' if n_rep == 1 else 'reportes'}"
+    else:
+        estado = "🟢 *SIN ALERTAS*"
 
-    if mostrar_id:
-        texto += f"• 🔑 ID: `{contacto['id'][:8]}`\n"
+    lineas = [f"📱 `{_esc(contacto['telefono'])}`\n"]
+    lineas.append(f"{estado}\n")
 
-    texto += f"• 📱 Número: `{contacto['telefono']}`\n"
-    texto += f"• 👤 Nombre: {nombre}\n"
+    # Bloque de datos en blockquote
+    lineas.append(f"> 👤 {_esc(nombre)}")
 
-    if contacto.get('ci'):
-        texto += f"• 🆔 CI: `{contacto['ci']}`\n"
-
-    # Ubicación
     provincia = contacto.get('provincia') or ''
     municipio = contacto.get('municipio') or ''
     if municipio and provincia:
-        texto += f"• 📍 Ubicación: {municipio}, {provincia}\n"
+        lineas.append(f"> 📍 {_esc(municipio)}, {_esc(provincia)}")
     elif provincia:
-        texto += f"• 📍 Provincia: {provincia}\n"
-
-    if contacto.get('direccion'):
-        texto += f"• 🏠 Dirección: {contacto['direccion']}\n"
+        lineas.append(f"> 📍 {_esc(provincia)}")
 
     if contacto.get('categoria_nombre'):
-        icono = contacto.get('categoria_icono') or '📂'
-        texto += f"• {icono} Categoría: {contacto['categoria_nombre']}\n"
+        icono = _esc(contacto.get('categoria_icono') or '📂')
+        lineas.append(f"> {icono} {_esc(contacto['categoria_nombre'])}")
+
+    if mostrar_id:
+        lineas.append(f"> 🔑 `{contacto['id'][:8]}`")
 
     # Links de contacto
-    tel = contacto['telefono'].replace('-', '').replace(' ', '')
+    tel = contacto['telefono'].replace('-','').replace(' ','')
     if len(tel) >= 8:
         num = tel if tel.startswith('+') else f"53{tel}" if len(tel) == 8 else tel
-        texto += f"• 📲 [Telegram](https://t.me/+{num}) | [WhatsApp](https://wa.me/{num})\n"
+        lineas.append(f"\n📲 [Telegram](https://t\\.me/\\+{num})  •  [WhatsApp](https://wa\\.me/{num})")
 
-    # Badge de riesgo
-    if mostrar_badge:
+    # Badge de riesgo con detalle
+    if tiene_badge:
         if verificado:
-            texto += f"\n🔴 *Contacto verificado como riesgoso*\n"
+            lineas.append("\n⚠️ _Verificado como riesgoso por el administrador_")
         else:
-            total = info['pendientes']
-            texto += f"\n⚠️ _Reportado {total} {'vez' if total == 1 else 'veces'}_\n"
+            lineas.append(f"\n⚠️ _Reportado {info.get('pendientes',0)} {'vez' if info.get('pendientes',0)==1 else 'veces'} por usuarios_")
     elif contacto.get('verificado'):
-        texto += f"\n✅ _Contacto verificado_\n"
+        lineas.append("\n✅ _Contacto verificado_")
 
-    texto += f"\n_@GuiaTelefonicaRootBot_"
-    return texto
+    lineas.append("\n_@GuiaTelefonicaRootBot_")
+
+    return '\n'.join(lineas)
 
 
 def teclado_contacto(contacto: dict, es_admin: bool = False) -> InlineKeyboardMarkup:
-    """Genera el teclado inline con acciones para un contacto."""
-    cid   = contacto['id']
-    cid8  = cid[:8]
-    tel   = contacto['telefono'].replace('-', '').replace(' ', '')
-    num   = tel if tel.startswith('+') else f"53{tel}" if len(tel) == 8 else tel
+    """Teclado inline con acciones para un contacto."""
+    cid8 = contacto['id'][:8]
+    tel  = contacto['telefono'].replace('-','').replace(' ','')
+    num  = tel if tel.startswith('+') else f"53{tel}" if len(tel) == 8 else tel
 
     botones = [
-        # Fila 1: acciones de comunicación
         [
-            InlineKeyboardButton("📲 Telegram", url=f"https://t.me/+{num}"),
-            InlineKeyboardButton("💬 WhatsApp", url=f"https://wa.me/{num}"),
+            InlineKeyboardButton("📲 Telegram",  url=f"https://t.me/+{num}"),
+            InlineKeyboardButton("💬 WhatsApp",  url=f"https://wa.me/{num}"),
         ],
-        # Fila 2: acciones sociales
         [
             InlineKeyboardButton("⚠️ Reportar", callback_data=f"reportar_{cid8}"),
             InlineKeyboardButton("👍 Avalar",   callback_data=f"avalar_{cid8}"),
@@ -100,7 +108,7 @@ def _formato_lista_compacta(
     total_pags: int,
     query_texto: str = "",
 ) -> tuple[str, InlineKeyboardMarkup]:
-    """Lista numerada compacta + botón 'Ver' por contacto + paginación."""
+    """Lista numerada compacta con blockquotes + botón Ver por contacto."""
 
     lineas = []
     for i, c in enumerate(contactos):
@@ -113,30 +121,39 @@ def _formato_lista_compacta(
         prov = c.get('provincia') or ''
         ubi  = f"{mun}, {prov}" if mun and prov else prov or mun
 
-        linea  = f"*{num}.* {nombre.upper()}\n"
-        linea += f"   📱 `{tel}`\n"
+        # Indicador de riesgo
+        riesgo = ''
+        if c.get('reporte_confirmado') or c.get('verificado') == False and c.get('tiene_reportes'):
+            riesgo = ' 🔴'
+        elif c.get('tiene_reportes'):
+            riesgo = ' ⚠️'
+
+        linea  = f"*{num}\\.* {_esc(nombre.upper())}{riesgo}\n"
+        linea += f"  `{_esc(tel)}`"
         if ubi:
-            linea += f"   📍 {ubi}\n"
+            linea += f" • {_esc(ubi)}"
+        linea += "\n"
         lineas.append(linea)
 
     texto  = "".join(lineas)
-    texto += f"\n📊 {inicio_num}–{inicio_num + len(contactos) - 1} de *{total}*"
+    texto += f"\n_Mostrando {inicio_num}–{inicio_num + len(contactos) - 1} de {total}_"
 
-    # Botones: uno por contacto para ver detalle directo
+    # Botón Ver por contacto
     botones = []
     for i, c in enumerate(contactos):
-        num   = inicio_num + i
-        cid8  = c['id'][:8]
-        label = f"{num}. {c['telefono']}"
-        botones.append([InlineKeyboardButton(f"🔍 {label}", callback_data=f"ver_{cid8}")])
+        num  = inicio_num + i
+        cid8 = c['id'][:8]
+        botones.append([InlineKeyboardButton(
+            f"🔍 {num}. {c['telefono']}", callback_data=f"ver_{cid8}"
+        )])
 
     # Paginación
-    nav = []
+    nav     = []
     prefijo = f"pg_{query_texto}_" if query_texto else "pg__"
     if pagina > 1:
-        nav.append(InlineKeyboardButton("⬅️", callback_data=f"{prefijo}{pagina - 1}"))
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"{prefijo}{pagina-1}"))
     if pagina < total_pags:
-        nav.append(InlineKeyboardButton("➡️", callback_data=f"{prefijo}{pagina + 1}"))
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"{prefijo}{pagina+1}"))
     if nav:
         botones.append(nav)
 
