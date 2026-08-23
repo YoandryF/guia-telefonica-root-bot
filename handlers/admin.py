@@ -501,7 +501,8 @@ async def importar_archivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_texto_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Capturar texto libre del admin (motivo de rechazo, config, etc.)"""
+    """Capturar texto libre del admin (motivo de rechazo, config, etc.)
+    Si no hay nada pendiente, delegar a handle_texto_libre para búsqueda normal."""
     # Editar configuración pendiente
     if 'cfg_edit_clave' in context.user_data:
         clave = context.user_data.pop('cfg_edit_clave')
@@ -531,6 +532,11 @@ async def handle_texto_admin(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     await context.bot.send_message(chat_id=contacto["creado_por"], text=f"❌ Tu contacto *{contacto['nombre']} {contacto['apellido']}* fue rechazado.\nMotivo: {motivo}", parse_mode="Markdown")
                 except Exception:
                     pass
+        return
+
+    # Sin nada pendiente — delegar a búsqueda normal
+    from handlers.public import handle_texto_libre
+    await handle_texto_libre(update, context)
         return
 
 
