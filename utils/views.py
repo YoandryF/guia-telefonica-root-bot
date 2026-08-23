@@ -12,8 +12,28 @@ para que el usuario navegue sin salir del mensaje original.
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from telegram.ext import ContextTypes
 
-from utils.helpers import db, cache_resultados_set
+from utils.helpers import (
+    db, cache_resultados_set,
+    validar_valor_config,
+)
 from utils.formatters import formatear_contacto, teclado_contacto, _formato_lista_compacta, _esc
+
+
+def _inferir_tipo_hint(valor: str) -> str:
+    """Sugiere el formato esperado para edición — presentación pura."""
+    if valor in ('true', 'false'):
+        return "(true o false)"
+    try:
+        int(valor)
+        return "(número entero)"
+    except ValueError:
+        pass
+    try:
+        float(valor)
+        return "(número decimal, ej: 0.8)"
+    except ValueError:
+        pass
+    return "(texto libre)"
 
 
 # ── Helpers de navegación ─────────────────────────────────────────────────────
@@ -389,6 +409,43 @@ async def mostrar_config(message: Message, pagina: int = 0,
     await _enviar(message, texto, InlineKeyboardMarkup(botones),
                   parse_mode=None, editar=editar)
 
+
+async def mostrar_editar_config(message: Message, clave: str,
+                                pagina: int = 0, editar: bool = False) -> None:
+    """Pantalla de edición de un parámetro — exclusiva del owner.
+    Muestra valor actual, tipo esperado e instrucciones.
+    El owner responde con texto libre que handle_texto_admin procesa.
+    """
+    try:
+        resp = db.client.table("configuracion").select(
+            "clave, valor, descripcion"
+        ).eq("clave", clave).limit(1).execute()
+        cfg = resp.data[0] if resp.data else None
+    except Exception:
+        cfg = None
+
+    if not cfg:
+        markup = InlineKeyboardMarkup([_btn_inicio()])
+        await _enviar(message, "❌ Configuración no encontrada.",
+                      markup, parse_mode=None, editar=editar)
+        return
+
+    desc      = cfg.get('descripcion') or clave
+    valor_act = cfg.get('valor', '—')
+    tipo_hint = _inferir_tipo_hint(valor_act)
+
+    texto = (
+        f"✏️ Editando configuración\n\n"
+        f"📋 {desc}\n"
+        f"🔑 Clave: {clave}\n"
+        f"📌 Valor actual: {valor_act}\n\n"
+        f"Escribe el nuevo valor {tipo_hint}:\n"
+        f"(toca Cancelar o escribe /cancelar para descartar)"
+    )
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ Cancelar", callback_data=f"cfg_pg_{pagina}")]
+    ])
+    await _enviar(message, texto, markup, parse_mode=None, editar=editar)
 
 
 async def mostrar_lista_busqueda(message: Message, contactos: list, query_texto: str,

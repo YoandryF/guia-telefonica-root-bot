@@ -80,3 +80,44 @@ def paginar_contactos(contactos: list, pagina: int, por_pagina: int = 10) -> tup
     inicio = (pagina - 1) * por_pagina
     fin    = inicio + por_pagina
     return contactos[inicio:fin], pagina, total_paginas
+
+
+def validar_valor_config(nuevo: str, actual: str) -> str | None:
+    """Valida que el nuevo valor sea compatible con el tipo del valor actual.
+
+    Retorna un mensaje de error si no es válido, None si es correcto.
+    Solo el owner llega aquí — no se expone a admins.
+    """
+    if not nuevo:
+        return "El valor no puede estar vacío."
+
+    # Boolean
+    if actual in ('true', 'false'):
+        if nuevo.lower() not in ('true', 'false'):
+            return "Valor inválido. Debe ser true o false."
+        return None
+
+    # Entero
+    try:
+        int(actual)
+        try:
+            int(nuevo)
+            return None
+        except ValueError:
+            return "Valor inválido. Debe ser un número entero (ej: 3)."
+    except ValueError:
+        pass
+
+    # Decimal
+    try:
+        float(actual)
+        try:
+            float(nuevo)
+            return None
+        except ValueError:
+            return "Valor inválido. Debe ser un número decimal (ej: 0.8)."
+    except ValueError:
+        pass
+
+    # Texto libre — cualquier valor es válido
+    return None

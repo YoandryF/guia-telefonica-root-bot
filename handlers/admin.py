@@ -440,15 +440,62 @@ async def importar_archivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_texto_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Capturar texto libre del admin (motivo de rechazo, config, etc.)
     Si no hay nada pendiente, delegar a handle_texto_libre para búsqueda normal."""
-    # Editar configuración pendiente
+
+    # ── Editar configuración (solo owner) ─────────────────────────────────────
     if 'cfg_edit_clave' in context.user_data:
-        clave = context.user_data.pop('cfg_edit_clave')
-        valor = update.message.text.strip()
+        from utils.helpers import es_owner, validar_valor_config
+        if not es_owner(update.effective_user.id):
+            context.user_data.pop('cfg_edit_clave', None)
+            return
+
+        clave     = context.user_data.pop('cfg_edit_clave')
+        pagina    = context.user_data.pop('cfg_edit_pagina', 0)
+        nuevo_val = update.message.text.strip()
+
+        if nuevo_val.lower() == '/cancelar':
+            await update.message.reply_text("❌ Edición cancelada.")
+            from utils.views import mostrar_config
+            await mostrar_config(update.message, pagina=pagina)
+            return
+
+        # Obtener valor anterior para validar y confirmar
         try:
-            db.client.table("configuracion").update({"valor": valor}).eq("clave", clave).execute()
-            await update.message.reply_text(f"\u2705 `{clave}` = *{valor}*", parse_mode="Markdown")
+            resp     = db.client.table("configuracion").select(
+                "valor, descripcion"
+            ).eq("clave", clave).limit(1).execute()
+            cfg_prev = resp.data[0] if resp.data else {}
+            val_prev = cfg_prev.get('valor', '—')
+            desc     = cfg_prev.get('descripcion') or clave
+        except Exception:
+            val_prev = '—'
+            desc     = clave
+
+        error = validar_valor_config(nuevo_val, val_prev)
+        if error:
+            await update.message.reply_text(
+                f"⚠️ {error}\n\nEscribe de nuevo o /cancelar:"
+            )
+            # Restaurar estado para seguir esperando
+            context.user_data['cfg_edit_clave']  = clave
+            context.user_data['cfg_edit_pagina'] = pagina
+            return
+
+        try:
+            db.client.table("configuracion").update(
+                {"valor": nuevo_val}
+            ).eq("clave", clave).execute()
+            await update.message.reply_text(
+                f"✅ Configuración actualizada\n\n"
+                f"📋 {desc}\n"
+                f"   Antes: {val_prev}\n"
+                f"   Ahora: {nuevo_val}"
+            )
         except Exception as e:
-            await update.message.reply_text(f"\u274c Error: {e}")
+            await update.message.reply_text(f"❌ Error al guardar: {e}")
+            return
+
+        from utils.views import mostrar_config
+        await mostrar_config(update.message, pagina=pagina)
         return
 
     # Motivo de rechazo pendiente

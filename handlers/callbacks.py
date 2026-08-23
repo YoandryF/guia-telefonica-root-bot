@@ -19,7 +19,7 @@ from utils.views import (
     mostrar_pendientes, mostrar_reportes, mostrar_contacto,
     mostrar_start, mostrar_ayuda, mostrar_estadisticas,
     mostrar_admins, mostrar_mis_reportes, mostrar_lista_busqueda,
-    mostrar_config,
+    mostrar_config, mostrar_editar_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -302,10 +302,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("cfg_edit_"):
         clave = data[9:]
-        context.user_data['cfg_edit_clave'] = clave
-        await query.edit_message_text(
-            f"✏️ Escribe el nuevo valor para `{clave}`:", parse_mode="Markdown"
-        )
+        if not owner:
+            await query.answer("🔒 Solo el owner puede editar configuración", show_alert=True)
+            return
+        pagina = context.user_data.get('pend_pagina', 0)
+        # Guardar estado para que handle_texto_admin sepa qué editar
+        context.user_data['cfg_edit_clave']  = clave
+        context.user_data['cfg_edit_pagina'] = pagina
+        await mostrar_editar_config(query.message, clave, pagina=pagina, editar=True)
         return
 
     if data.startswith("pend_pg_"):
