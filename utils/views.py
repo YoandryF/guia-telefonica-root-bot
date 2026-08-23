@@ -336,15 +336,14 @@ async def mostrar_config(message: Message, pagina: int = 0,
         n     = i + 1
         clave = c['clave']
         valor = c.get('valor', '—')
+        desc  = (c.get('descripcion') or clave).strip()  # descripcion o clave si no hay
         if sel_cfg and c['clave'] == sel_cfg['clave']:
-            texto += f"▶ {n}. {clave}\n"
-            texto += f"   Valor: {valor}\n"
-            desc = c.get('descripcion') or ''
-            if desc:
-                texto += f"   {desc}\n"
+            texto += f"▶ {n}. {desc}\n"
+            texto += f"   Valor actual: {valor}\n"
+            texto += f"   Clave: {clave}\n"
             texto += "\n"
         else:
-            texto += f"{n}. {clave} = {valor}\n"
+            texto += f"{n}. {desc}: {valor}\n"
 
     # ── Botones: números 1-N para seleccionar ────────────────────────────────
     botones = []
