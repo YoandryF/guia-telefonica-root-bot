@@ -46,7 +46,7 @@ def _teclado_provincias():
     for i in range(0, len(PROVINCIAS), 2):
         fila = PROVINCIAS[i:i+2]
         filas.append(fila)
-    filas.append(["/cancelar"])
+    filas.append(["🔙 Cancelar registro"])
     return ReplyKeyboardMarkup(filas, resize_keyboard=True, one_time_keyboard=True)
 
 def _teclado_municipios(provincia: str):
@@ -54,8 +54,19 @@ def _teclado_municipios(provincia: str):
     filas = []
     for i in range(0, len(munis), 2):
         filas.append(munis[i:i+2])
-    filas.append(["/cancelar"])
+    filas.append(["🔙 Cancelar registro"])
     return ReplyKeyboardMarkup(filas, resize_keyboard=True, one_time_keyboard=True)
+
+
+def _btn_cancelar_agregar(con_progreso: bool = False) -> InlineKeyboardMarkup:
+    """Botón inline de cancelar — sin progreso vuelve directo, con progreso pide confirmación."""
+    if con_progreso:
+        return InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔙 Cancelar registro", callback_data="agregar_cancelar_confirmar")
+        ]])
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔙 Volver al inicio", callback_data="agregar_cancelar")
+    ]])
 
 
 async def agregar_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -95,33 +106,43 @@ async def agregar_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def agregar_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     nombre = update.message.text.strip()
     if len(nombre) < 2:
-        await update.message.reply_text("⚠️ Mínimo 2 caracteres. Intenta de nuevo:")
+        await update.message.reply_text("⚠️ Mínimo 2 caracteres. Intenta de nuevo:",
+                                        reply_markup=_btn_cancelar_agregar())
         return AGR_NOMBRE
     context.user_data['nombre'] = nombre
     await update.message.reply_text(
         f"✅ Nombre: *{nombre}*\n\n*Paso 2/5* — ¿Cuál es el *apellido*?",
         parse_mode="Markdown",
+        reply_markup=_btn_cancelar_agregar(con_progreso=True),
     )
     return AGR_APELLIDO
 
 
 async def agregar_apellido(update: Update, context: ContextTypes.DEFAULT_TYPE):
     apellido = update.message.text.strip()
+    if apellido == "🔙 Cancelar registro":
+        return await _confirmar_cancelar_agregar(update, context)
     if len(apellido) < 2:
-        await update.message.reply_text("⚠️ Mínimo 2 caracteres. Intenta de nuevo:")
+        await update.message.reply_text("⚠️ Mínimo 2 caracteres. Intenta de nuevo:",
+                                        reply_markup=_btn_cancelar_agregar(con_progreso=True))
         return AGR_APELLIDO
     context.user_data['apellido'] = apellido
     await update.message.reply_text(
         f"✅ Apellido: *{apellido}*\n\n*Paso 3/5* — ¿Cuál es el *teléfono*?",
         parse_mode="Markdown",
+        reply_markup=_btn_cancelar_agregar(con_progreso=True),
     )
     return AGR_TELEFONO
 
 
 async def agregar_telefono(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telefono = update.message.text.strip().replace("-", "").replace(" ", "")
+    telefono = update.message.text.strip()
+    if telefono == "🔙 Cancelar registro":
+        return await _confirmar_cancelar_agregar(update, context)
+    telefono = telefono.replace("-", "").replace(" ", "")
     if not telefono.isdigit() or len(telefono) < 7:
-        await update.message.reply_text("⚠️ Teléfono inválido — solo dígitos, mínimo 7. Intenta de nuevo:")
+        await update.message.reply_text("⚠️ Teléfono inválido — solo dígitos, mínimo 7. Intenta de nuevo:",
+                                        reply_markup=_btn_cancelar_agregar(con_progreso=True))
         return AGR_TELEFONO
     context.user_data['telefono'] = telefono
     await update.message.reply_text(
@@ -134,11 +155,11 @@ async def agregar_telefono(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def agregar_provincia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     provincia = update.message.text.strip()
+    if provincia == "🔙 Cancelar registro":
+        return await _confirmar_cancelar_agregar(update, context)
     if provincia not in PROVINCIAS:
-        await update.message.reply_text(
-            "⚠️ Selecciona una provincia del teclado:",
-            reply_markup=_teclado_provincias(),
-        )
+        await update.message.reply_text("⚠️ Selecciona una provincia del teclado:",
+                                        reply_markup=_teclado_provincias())
         return AGR_PROVINCIA
     context.user_data['provincia'] = provincia
     await update.message.reply_text(
@@ -151,15 +172,29 @@ async def agregar_provincia(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def agregar_municipio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     municipio = update.message.text.strip()
+    if municipio == "🔙 Cancelar registro":
+        return await _confirmar_cancelar_agregar(update, context)
     provincia = context.user_data.get('provincia', '')
     if municipio not in MUNICIPIOS.get(provincia, []):
-        await update.message.reply_text(
-            "⚠️ Selecciona un municipio del teclado:",
-            reply_markup=_teclado_municipios(provincia),
-        )
+        await update.message.reply_text("⚠️ Selecciona un municipio del teclado:",
+                                        reply_markup=_teclado_municipios(provincia))
         return AGR_MUNICIPIO
     context.user_data['municipio'] = municipio
     return await _finalizar_registro(update, context)
+
+
+async def _confirmar_cancelar_agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra confirmación antes de cancelar el registro."""
+    await update.message.reply_text(
+        "⚠️ <b>¿Cancelar el registro?</b>\n\n"
+        "Se perderán los datos que ya escribiste.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Sí, cancelar", callback_data="agregar_cancelar"),
+            InlineKeyboardButton("↩️ Seguir",       callback_data="agregar_seguir"),
+        ]]),
+    )
+    return AGR_MUNICIPIO  # mantener estado activo para capturar el callback
 
 
 async def _finalizar_registro(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -361,8 +396,62 @@ async def _procesar_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE,
     return ConversationHandler.END
 
 
+async def agregar_cancelar_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancelar registro de contacto — limpia estado y vuelve al inicio."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop('nombre', None)
+    context.user_data.pop('apellido', None)
+    context.user_data.pop('telefono', None)
+    context.user_data.pop('provincia', None)
+    context.user_data.pop('municipio', None)
+    from utils.views import mostrar_start
+    await mostrar_start(query.message, query.from_user.id,
+                        query.from_user.first_name or "amigo")
+    return ConversationHandler.END
+
+
+async def agregar_seguir_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Retomar el flujo — determina en qué paso retomar según datos guardados."""
+    query = update.callback_query
+    await query.answer()
+    nombre   = context.user_data.get('nombre', '')
+    apellido = context.user_data.get('apellido', '')
+    telefono = context.user_data.get('telefono', '')
+    provincia = context.user_data.get('provincia', '')
+
+    if not apellido:
+        await query.edit_message_text(
+            f"✅ Nombre: *{nombre}*\n\n*Paso 2/5* — ¿Cuál es el *apellido*?",
+            parse_mode="Markdown",
+            reply_markup=_btn_cancelar_agregar(con_progreso=True),
+        )
+        return AGR_APELLIDO
+    elif not telefono:
+        await query.edit_message_text(
+            f"✅ Apellido: *{apellido}*\n\n*Paso 3/5* — ¿Cuál es el *teléfono*?",
+            parse_mode="Markdown",
+            reply_markup=_btn_cancelar_agregar(con_progreso=True),
+        )
+        return AGR_TELEFONO
+    elif not provincia:
+        await query.edit_message_text(
+            f"✅ Teléfono: *{telefono}*\n\n*Paso 4/5* — Selecciona la *provincia*:",
+            parse_mode="Markdown",
+        )
+        await query.message.reply_text("Selecciona:", reply_markup=_teclado_provincias())
+        return AGR_PROVINCIA
+    else:
+        await query.edit_message_text(
+            f"✅ Provincia: *{provincia}*\n\n*Paso 5/5* — Selecciona el *municipio*:",
+            parse_mode="Markdown",
+        )
+        await query.message.reply_text("Selecciona:", reply_markup=_teclado_municipios(provincia))
+        return AGR_MUNICIPIO
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Cancelar
+# Cancelar (comando)
 # ─────────────────────────────────────────────────────────────────────────────
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -374,19 +463,33 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Builders
 # ─────────────────────────────────────────────────────────────────────────────
 def get_agregar_handler():
+    cancelar_cb = CallbackQueryHandler(
+        agregar_cancelar_cb, pattern="^agregar_cancelar$"
+    )
+    seguir_cb = CallbackQueryHandler(
+        agregar_seguir_cb, pattern="^agregar_seguir$"
+    )
     return ConversationHandler(
         entry_points=[
             CommandHandler("agregar", agregar_inicio),
             CallbackQueryHandler(agregar_inicio, pattern="^cmd_agregar$"),
         ],
         states={
-            AGR_NOMBRE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_nombre)],
-            AGR_APELLIDO:  [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_apellido)],
-            AGR_TELEFONO:  [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_telefono)],
-            AGR_PROVINCIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_provincia)],
-            AGR_MUNICIPIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_municipio)],
+            AGR_NOMBRE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_nombre),
+                            cancelar_cb],
+            AGR_APELLIDO:  [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_apellido),
+                            cancelar_cb],
+            AGR_TELEFONO:  [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_telefono),
+                            cancelar_cb],
+            AGR_PROVINCIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_provincia),
+                            cancelar_cb],
+            AGR_MUNICIPIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_municipio),
+                            cancelar_cb, seguir_cb],
         },
-        fallbacks=[CommandHandler("cancelar", cancelar)],
+        fallbacks=[
+            CommandHandler("cancelar", cancelar),
+            cancelar_cb,
+        ],
     )
 
 
