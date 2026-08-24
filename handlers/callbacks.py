@@ -112,10 +112,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "cmd_agregar":
         await query.edit_message_text(
-            "✏️ *Registrar un nuevo contacto*\n\n"
-            "Escribe /agregar para iniciar el flujo paso a paso\\.  \n"
-            "_(nombre → apellido → teléfono → provincia → municipio)_",
-            parse_mode="MarkdownV2",
+            "✏️ <b>Registrar un nuevo contacto</b>\n\n"
+            "Escribe /agregar para iniciar el flujo paso a paso\n"
+            "<i>(nombre → apellido → teléfono → provincia → municipio)</i>",
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio")
             ]]),
