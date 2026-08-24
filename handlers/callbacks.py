@@ -111,15 +111,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "cmd_agregar":
-        await query.edit_message_text(
-            "✏️ <b>Registrar un nuevo contacto</b>\n\n"
-            "Escribe /agregar para iniciar el flujo paso a paso\n"
-            "<i>(nombre → apellido → teléfono → provincia → municipio)</i>",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio")
-            ]]),
-        )
+        # Manejado por get_agregar_handler en conversations.py
         return
 
     if data == "noop":

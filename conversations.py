@@ -59,12 +59,11 @@ def _teclado_municipios(provincia: str):
 
 
 async def agregar_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Inicio de /agregar — si tiene args procesa directo; si no, flujo interactivo."""
+    """Inicio de /agregar — desde comando o botón inline."""
     if context.args:
         texto  = " ".join(context.args)
         partes = [p.strip() for p in texto.split(",")]
         if len(partes) >= 5:
-            # Formato: Nombre, Apellido, Teléfono, Provincia, Municipio
             return await _registrar_directo(update, context, partes)
         else:
             await update.message.reply_text(
@@ -74,11 +73,22 @@ async def agregar_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return ConversationHandler.END
 
-    await update.message.reply_text(
-        "✏️ *Nuevo contacto — Paso 1/5*\n\n¿Cuál es el *nombre*?",
-        parse_mode="Markdown",
-        reply_markup=ReplyKeyboardMarkup([["/cancelar"]], resize_keyboard=True),
-    )
+    texto  = "✏️ *Nuevo contacto — Paso 1/5*\n\n¿Cuál es el *nombre*?"
+    markup = ReplyKeyboardMarkup([["/cancelar"]], resize_keyboard=True)
+
+    if update.callback_query:
+        await update.callback_query.answer()
+        # Editar el mensaje inline y luego enviar el paso como mensaje nuevo
+        await update.callback_query.edit_message_text(
+            "✏️ Registrando nuevo contacto...\n\n"
+            "<i>Responde a los mensajes del bot para completar el registro.</i>",
+            parse_mode="HTML",
+        )
+        await update.callback_query.message.reply_text(
+            texto, parse_mode="Markdown", reply_markup=markup
+        )
+    else:
+        await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=markup)
     return AGR_NOMBRE
 
 
@@ -365,7 +375,10 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─────────────────────────────────────────────────────────────────────────────
 def get_agregar_handler():
     return ConversationHandler(
-        entry_points=[CommandHandler("agregar", agregar_inicio)],
+        entry_points=[
+            CommandHandler("agregar", agregar_inicio),
+            CallbackQueryHandler(agregar_inicio, pattern="^cmd_agregar$"),
+        ],
         states={
             AGR_NOMBRE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_nombre)],
             AGR_APELLIDO:  [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_apellido)],
