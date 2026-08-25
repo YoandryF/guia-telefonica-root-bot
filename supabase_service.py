@@ -226,37 +226,19 @@ class SupabaseService:
 
     def aprobar_contacto(self, identificador: str, aprobado_por: str = None) -> dict:
         """Aprobar un contacto pendiente. Acepta UUID completo, prefijo de 8 chars o teléfono."""
+    def aprobar_contacto(self, identificador: str, aprobado_por: str = None) -> dict:
+        """Aprobar un contacto pendiente. Acepta UUID completo, prefijo de 8 chars o teléfono."""
         if not self._check_client():
             return {"error": "BD no disponible"}
         try:
-            # Buscar por UUID (completo o prefijo) o por teléfono
-            if any(c.isalpha() or c == '-' for c in identificador):
-                response = (
-                    self.client.table("contactos")
-                    .select("*")
-                    .ilike("id", f"{identificador}%")
-                    .eq("estado", "pendiente")
-                    .is_("deleted_at", None)
-                    .limit(1)
-                    .execute()
-                )
-            else:
-                response = (
-                    self.client.table("contactos")
-                    .select("*")
-                    .ilike("telefono", f"%{identificador}%")
-                    .eq("estado", "pendiente")
-                    .is_("deleted_at", None)
-                    .limit(1)
-                    .execute()
-                )
+            # Primero localizar el contacto con el método que ya funciona
+            contacto = self.buscar_por_id_o_telefono(identificador)
+            if not contacto:
+                return {"error": "Contacto no encontrado"}
+            if contacto.get("estado") != "pendiente":
+                return {"error": f"El contacto ya está en estado '{contacto.get('estado')}'"}
 
-            if not response.data:
-                return {"error": "Contacto no encontrado o ya procesado"}
-
-            contacto = response.data[0]
-            full_id  = contacto["id"]
-
+            full_id = contacto["id"]
             update_response = (
                 self.client.table("contactos")
                 .update({
@@ -268,7 +250,6 @@ class SupabaseService:
                 .eq("id", full_id)
                 .execute()
             )
-
             self._registrar_historial(full_id, "aprobado", realizado_por=aprobado_por)
             return {"data": update_response.data[0] if update_response.data else contacto}
         except Exception as e:
@@ -280,33 +261,13 @@ class SupabaseService:
         if not self._check_client():
             return {"error": "BD no disponible"}
         try:
-            if any(c.isalpha() or c == '-' for c in identificador):
-                response = (
-                    self.client.table("contactos")
-                    .select("*")
-                    .ilike("id", f"{identificador}%")
-                    .eq("estado", "pendiente")
-                    .is_("deleted_at", None)
-                    .limit(1)
-                    .execute()
-                )
-            else:
-                response = (
-                    self.client.table("contactos")
-                    .select("*")
-                    .ilike("telefono", f"%{identificador}%")
-                    .eq("estado", "pendiente")
-                    .is_("deleted_at", None)
-                    .limit(1)
-                    .execute()
-                )
+            contacto = self.buscar_por_id_o_telefono(identificador)
+            if not contacto:
+                return {"error": "Contacto no encontrado"}
+            if contacto.get("estado") != "pendiente":
+                return {"error": f"El contacto ya está en estado '{contacto.get('estado')}'"}
 
-            if not response.data:
-                return {"error": "Contacto no encontrado o ya procesado"}
-
-            contacto = response.data[0]
-            full_id  = contacto["id"]
-
+            full_id = contacto["id"]
             update_response = (
                 self.client.table("contactos")
                 .update({
@@ -317,7 +278,6 @@ class SupabaseService:
                 .eq("id", full_id)
                 .execute()
             )
-
             self._registrar_historial(full_id, "rechazado", realizado_por="admin")
             return {"data": update_response.data[0] if update_response.data else contacto}
         except Exception as e:
