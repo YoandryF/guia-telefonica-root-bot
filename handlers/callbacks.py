@@ -19,7 +19,7 @@ from utils.views import (
     mostrar_pendientes, mostrar_reportes, mostrar_contacto,
     mostrar_start, mostrar_ayuda, mostrar_estadisticas,
     mostrar_admins, mostrar_eliminar_admin, mostrar_confirmar_eliminar_admin,
-    mostrar_mis_reportes, mostrar_lista_busqueda,
+    mostrar_mis_reportes, mostrar_lista_busqueda, mostrar_listanegra,
     mostrar_config, mostrar_editar_config,
 )
 
@@ -68,37 +68,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Lista negra paginada (ln_) ─────────────────────────────────────────────
+    # ── Lista negra paginada (ln_ y cmd_listanegra) ────────────────────────────
+    if data == "cmd_listanegra":
+        await mostrar_listanegra(query.message, pagina=1, editar=True)
+        return
+
     if data.startswith("ln_"):
-        pagina     = int(data.replace("ln_", "")) if data.replace("ln_", "").isdigit() else 1
-        chat_id    = str(query.from_user.id)
-        cache      = cache_resultados_get(chat_id)
-        total      = cache.get('total', 0) if cache and cache.get('tipo') == 'listanegra' \
-                     else db.contar_contactos_con_reportes()
-        por_pagina = 10
-        offset     = (pagina - 1) * por_pagina
-        total_pags = max(1, (total + por_pagina - 1) // por_pagina)
-        reportados = db.get_contactos_con_reportes(limite=por_pagina, offset=offset)
-        inicio_num = offset + 1
-
-        texto  = f"⚠️ *Lista Negra — {total} contactos*\n\n"
-        for i, c in enumerate(reportados, inicio_num):
-            nombre = f"{c['nombre']} {c['apellido']}"
-            if len(nombre) > 22:
-                nombre = nombre[:20] + "…"
-            estado  = "🔴 Verificado" if c.get('verificado') else "🟡 Reportado"
-            texto  += f"*{i}.* {nombre.upper()}\n   📱 `{c['telefono']}` — {estado}\n\n"
-        texto += f"_Escribe el número para ver detalles_"
-
-        nav = []
-        if pagina > 1:
-            nav.append(InlineKeyboardButton("⬅️", callback_data=f"ln_{pagina-1}"))
-        if pagina < total_pags:
-            nav.append(InlineKeyboardButton("➡️", callback_data=f"ln_{pagina+1}"))
-        botones = [nav] if nav else []
-        botones.append([InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio")])
-        await query.edit_message_text(texto, parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(botones))
+        pagina = int(data.replace("ln_", "")) if data.replace("ln_", "").isdigit() else 1
+        await mostrar_listanegra(query.message, pagina=pagina, editar=True)
         return
 
     # ── Vistas del menú principal ──────────────────────────────────────────────

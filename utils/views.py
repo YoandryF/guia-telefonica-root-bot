@@ -88,8 +88,11 @@ async def mostrar_start(message: Message, user_id: int,
             InlineKeyboardButton("➕ Agregar contacto", callback_data="cmd_agregar"),
         ],
         [
+            InlineKeyboardButton("🚫 Lista negra",  callback_data="cmd_listanegra"),
             InlineKeyboardButton("📌 Mis reportes", callback_data="cmd_misreportes"),
-            InlineKeyboardButton("❓ Ayuda",         callback_data="cmd_ayuda"),
+        ],
+        [
+            InlineKeyboardButton("❓ Ayuda", callback_data="cmd_ayuda"),
         ],
     ]
 
@@ -114,6 +117,50 @@ async def mostrar_start(message: Message, user_id: int,
     else:
         await message.reply_text(mensaje, parse_mode="MarkdownV2",
                                  reply_markup=markup, disable_web_page_preview=True)
+
+
+# ── Lista negra ───────────────────────────────────────────────────────────────
+
+async def mostrar_listanegra(message: Message, pagina: int = 1,
+                              editar: bool = False) -> None:
+    """Lista paginada de contactos reportados — accesible a todos los usuarios."""
+    por_pagina = 10
+    offset     = (pagina - 1) * por_pagina
+    total      = db.contar_contactos_con_reportes()
+
+    if total == 0:
+        markup = InlineKeyboardMarkup([_btn_inicio()])
+        await _enviar(message, "✅ La lista negra está vacía por ahora.",
+                      markup, parse_mode=None, editar=editar)
+        return
+
+    reportados = db.get_contactos_con_reportes(limite=por_pagina, offset=offset)
+    total_pags = max(1, (total + por_pagina - 1) // por_pagina)
+    inicio_num = offset + 1
+
+    texto  = f"🚫 <b>Lista Negra</b>\n"
+    texto += f"<i>{total} números reportados — Página {pagina}/{total_pags}</i>\n"
+    texto += "——————————————————\n\n"
+
+    for i, c in enumerate(reportados, inicio_num):
+        nombre = _html.escape(f"{c['nombre']} {c['apellido']}".upper())
+        tel    = _html.escape(c['telefono'])
+        estado = "⛔ Verificado" if c.get('verificado') else "🔴 Reportado"
+        texto += f"{i}. <b>{nombre}</b>\n   📱 <code>{tel}</code> — {estado}\n\n"
+
+    botones = []
+    nav = []
+    if pagina > 1:
+        nav.append(InlineKeyboardButton("◀️", callback_data=f"ln_{pagina-1}"))
+    nav.append(InlineKeyboardButton(f"· {pagina}/{total_pags} ·", callback_data="noop"))
+    if pagina < total_pags:
+        nav.append(InlineKeyboardButton("▶️", callback_data=f"ln_{pagina+1}"))
+    if nav:
+        botones.append(nav)
+    botones.append(_btn_inicio())
+
+    await _enviar(message, texto, InlineKeyboardMarkup(botones),
+                  parse_mode="HTML", editar=editar)
 
 
 # ── Ayuda ─────────────────────────────────────────────────────────────────────
