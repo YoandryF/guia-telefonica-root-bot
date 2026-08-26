@@ -29,11 +29,13 @@ logger = logging.getLogger(__name__)
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Enrutar clicks de botones inline a la vista correspondiente."""
     query = update.callback_query
-    await query.answer()
-
     data  = query.data
     admin = es_admin(query.from_user.id)
     owner = es_owner(query.from_user.id)
+
+    # answer() silencioso por defecto — quita el spinner del botón sin mostrar toast
+    # Las ramas que necesitan feedback lo sobreescriben con su propio answer()
+    await query.answer()
 
     # ── Navegación: Inicio ────────────────────────────────────────────────────
     if data == "cmd_inicio":
@@ -274,16 +276,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data.startswith("aprobar_"):
+        await query.edit_message_text("⏳ Aprobando contacto...")
         cid8      = data[8:]
         resultado = db.aprobar_contacto(cid8, aprobado_por=str(query.from_user.id))
         if resultado.get("error"):
-            await query.edit_message_text(f"❌ Error: {resultado['error']}")
+            await query.edit_message_text(
+                f"❌ Error: {resultado['error']}",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Ver pendientes", callback_data="cmd_pendientes"),
+                    InlineKeyboardButton("🏠 Inicio",         callback_data="cmd_inicio"),
+                ]]),
+            )
         else:
             c = resultado.get("data", {})
-            await query.edit_message_text(
-                f"✅ *Aprobado:* {c.get('nombre','')} {c.get('apellido','')}",
-                parse_mode="Markdown",
-            )
             if c.get("creado_por") and c.get("creado_desde") == "telegram":
                 try:
                     await query.bot.send_message(
@@ -293,27 +298,43 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                 except Exception:
                     pass
+            # Volver a pendientes actualizados
+            await mostrar_pendientes(query.message, context, query.from_user.id,
+                                     pagina=0, editar=True)
         return
 
     if data.startswith("rechazar_"):
         context.user_data['rechazar_id'] = data[9:]
-        await query.edit_message_text("❌ Escribe el motivo de rechazo:")
+        await query.edit_message_text(
+            "❌ Escribe el motivo de rechazo:\n\n"
+            "<i>(o toca Cancelar para volver)</i>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 Cancelar", callback_data="cmd_pendientes"),
+            ]]),
+        )
         return
 
     if data.startswith(("eliminar_", "confirmar_del_")):
+        await query.answer("⏳ Eliminando...")
         prefijo  = "eliminar_" if data.startswith("eliminar_") else "confirmar_del_"
         cid8     = data[len(prefijo):]
         contacto = db.buscar_por_id_o_telefono(cid8)
         if contacto:
+            await query.edit_message_text("⏳ Eliminando contacto...")
             db.client.table("contactos").update(
                 {"deleted_at": datetime.utcnow().isoformat()}
             ).eq("id", contacto["id"]).execute()
-            await query.edit_message_text(
-                f"🗑 *Eliminado:* {contacto['nombre']} {contacto['apellido']}",
-                parse_mode="Markdown",
-            )
+            await mostrar_pendientes(query.message, context, query.from_user.id,
+                                     pagina=0, editar=True)
         else:
-            await query.edit_message_text("❌ No encontrado.")
+            await query.edit_message_text(
+                "❌ No encontrado.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Ver pendientes", callback_data="cmd_pendientes"),
+                    InlineKeyboardButton("🏠 Inicio",         callback_data="cmd_inicio"),
+                ]]),
+            )
         return
 
     if data.startswith("cfg_edit_"):
