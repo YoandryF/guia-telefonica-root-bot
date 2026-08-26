@@ -221,22 +221,80 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Acciones sobre contactos ───────────────────────────────────────────────
     if data.startswith("reportar_"):
-        cid8     = data[9:]
-        contacto = db.buscar_por_id_o_telefono(cid8)
+        tel_id   = data[9:]
+        contacto = db.buscar_por_id_o_telefono(tel_id)
         if not contacto:
             await query.answer("❌ No encontrado", show_alert=True)
             return
-        context.user_data['reportar_id'] = contacto['id']
+        nombre = f"{contacto['nombre']} {contacto['apellido']}"
+        # Flujo inline — motivos como botones, sin necesitar texto
         await query.edit_message_text(
-            f"⚠️ *Reportar:* {contacto['nombre']} {contacto['apellido']}\n"
-            f"📱 `{contacto['telefono']}`\n\nEscribe el motivo:",
+            f"⚠️ *Reportar contacto*\n\n"
+            f"👤 {nombre}\n"
+            f"📱 `{contacto['telefono']}`\n\n"
+            f"Selecciona el motivo:",
             parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📞 Número incorrecto", callback_data=f"rep_mot_{tel_id}_numero_incorrecto")],
+                [InlineKeyboardButton("❌ No existe",          callback_data=f"rep_mot_{tel_id}_no_existe")],
+                [InlineKeyboardButton("📢 Spam",               callback_data=f"rep_mot_{tel_id}_spam")],
+                [InlineKeyboardButton("🔄 Duplicado",          callback_data=f"rep_mot_{tel_id}_duplicado")],
+                [InlineKeyboardButton("⚠️ Estafa / Fraude",   callback_data=f"rep_mot_{tel_id}_otro")],
+                [InlineKeyboardButton("🔙 Volver",             callback_data=f"ver_{tel_id}")],
+            ]),
         )
         return
 
+    if data.startswith("rep_mot_"):
+        # formato: rep_mot_{telefono}_{motivo}
+        partes  = data[8:].rsplit("_", 1)
+        tel_id  = partes[0]
+        motivo  = partes[1] if len(partes) > 1 else "otro"
+        contacto = db.buscar_por_id_o_telefono(tel_id)
+        if not contacto:
+            await query.answer("❌ No encontrado", show_alert=True)
+            return
+        resultado = db.reportar_contacto(
+            contacto_id   = contacto['id'],
+            motivo        = motivo,
+            descripcion   = None,
+            reportado_por = str(query.from_user.id),
+        )
+        if resultado.get("error"):
+            await query.answer(f"❌ {resultado['error']}", show_alert=True)
+        else:
+            # Notificar al admin
+            from utils.helpers import ADMIN_CHAT_ID
+            if ADMIN_CHAT_ID:
+                try:
+                    nombre = f"{contacto['nombre']} {contacto['apellido']}"
+                    await query.bot.send_message(
+                        chat_id=ADMIN_CHAT_ID,
+                        text=(
+                            f"🚨 *Nuevo reporte*\n\n"
+                            f"👤 {nombre} (`{contacto['telefono']}`)\n"
+                            f"⚠️ Motivo: {motivo}\n"
+                            f"Por: @{query.from_user.username or query.from_user.first_name}"
+                        ),
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    pass
+            # Volver a la ficha con confirmación
+            await query.edit_message_text(
+                f"✅ *Reporte enviado*\n\n"
+                f"Gracias por informar. El administrador lo revisará pronto.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Ver contacto", callback_data=f"ver_{tel_id}"),
+                    InlineKeyboardButton("🏠 Inicio",       callback_data="cmd_inicio"),
+                ]]),
+            )
+        return
+
     if data.startswith("avalar_"):
-        cid8     = data[7:]
-        contacto = db.buscar_por_id_o_telefono(cid8)
+        tel_id   = data[7:]
+        contacto = db.buscar_por_id_o_telefono(tel_id)
         if not contacto:
             await query.answer("❌ No encontrado", show_alert=True)
             return
@@ -245,7 +303,18 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "contacto_id": contacto["id"],
                 "avalado_por": str(query.from_user.id),
             }).execute()
-            await query.answer("👍 Aval enviado — pendiente de revisión", show_alert=True)
+            nombre = f"{contacto['nombre']} {contacto['apellido']}"
+            await query.edit_message_text(
+                f"👍 *Aval enviado*\n\n"
+                f"👤 {nombre}\n"
+                f"📱 `{contacto['telefono']}`\n\n"
+                f"_Pendiente de revisión por el administrador._",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Ver contacto", callback_data=f"ver_{tel_id}"),
+                    InlineKeyboardButton("🏠 Inicio",       callback_data="cmd_inicio"),
+                ]]),
+            )
         except Exception as e:
             msg = "⚠️ Ya avalaste este contacto" if "duplicate" in str(e).lower() else f"❌ Error: {e}"
             await query.answer(msg, show_alert=True)
