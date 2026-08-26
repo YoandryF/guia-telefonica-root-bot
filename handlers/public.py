@@ -148,16 +148,24 @@ async def handle_texto_libre(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if limpio.isdigit() and len(limpio) >= 7:
         msg = await update.message.reply_text("🔍 Buscando número\\.\\.\\.", parse_mode="MarkdownV2")
         await update.message.chat.send_action("typing")
-        contacto = db.buscar_por_id_o_telefono(texto)
-        if contacto:
-            admin   = es_admin(update.effective_user.id)
-            detalle = formatear_contacto(contacto, mostrar_id=admin)
-            markup  = teclado_contacto(contacto, es_admin=admin)
-            await msg.edit_text(detalle, parse_mode="MarkdownV2", reply_markup=markup)
-        else:
+        try:
+            contacto = db.buscar_por_id_o_telefono(texto)
+            if contacto:
+                admin   = es_admin(update.effective_user.id)
+                detalle = formatear_contacto(contacto, info_reportes=db.get_info_reportes(contacto['id']),
+                                             mostrar_id=admin)
+                markup  = teclado_contacto(contacto, es_admin=admin)
+                await msg.edit_text(detalle, parse_mode="MarkdownV2", reply_markup=markup)
+            else:
+                await msg.edit_text(
+                    f"⚪ El número `{_esc(limpio)}` no está en nuestra base de datos\\.\n\n"
+                    f"_¿Lo conoces\\? Agrégalo con /agregar_",
+                    parse_mode="MarkdownV2",
+                )
+        except Exception as e:
+            logger.error(f"Error buscando número {limpio}: {e}")
             await msg.edit_text(
-                f"⚪ El número `{_esc(limpio)}` no está en nuestra base de datos\\.\n\n"
-                f"_¿Lo conoces\\? Agrégalo con /agregar_",
+                f"⚪ No se encontró el número `{limpio}`\\.",
                 parse_mode="MarkdownV2",
             )
         return
@@ -169,17 +177,24 @@ async def handle_texto_libre(update: Update, context: ContextTypes.DEFAULT_TYPE)
             parse_mode="MarkdownV2",
         )
         await update.message.chat.send_action("typing")
-        contactos = db.buscar_contactos(texto)
-        if contactos:
-            chat_id = str(update.effective_user.id)
-            cache_resultados_set(chat_id, {'contactos': contactos, 'query': texto})
-            total      = len(contactos)
-            total_pags = max(1, (total + 9) // 10)
-            t, markup  = _formato_lista_compacta(contactos[:10], 1, total, 1, total_pags, texto)
-            await msg.edit_text(t, parse_mode="MarkdownV2", reply_markup=markup)
-        else:
+        try:
+            contactos = db.buscar_contactos(texto)
+            if contactos:
+                chat_id = str(update.effective_user.id)
+                cache_resultados_set(chat_id, {'contactos': contactos, 'query': texto})
+                total      = len(contactos)
+                total_pags = max(1, (total + 9) // 10)
+                t, markup  = _formato_lista_compacta(contactos[:10], 1, total, 1, total_pags, texto)
+                await msg.edit_text(t, parse_mode="MarkdownV2", reply_markup=markup)
+            else:
+                await msg.edit_text(
+                    f"❌ Sin resultados para *{_esc(texto)}*\n\nIntenta con otro término\\.",
+                    parse_mode="MarkdownV2",
+                )
+        except Exception as e:
+            logger.error(f"Error búsqueda '{texto}': {e}")
             await msg.edit_text(
-                f"❌ Sin resultados para *{_esc(texto)}*\n\nIntenta con otro término\\.",
+                f"❌ Error al buscar\\. Intenta de nuevo\\.",
                 parse_mode="MarkdownV2",
             )
 

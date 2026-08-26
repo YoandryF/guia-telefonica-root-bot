@@ -6,12 +6,11 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 def _esc(text: str) -> str:
-    """Escapa caracteres especiales para MarkdownV2."""
+    """Escapa caracteres especiales para MarkdownV2 de forma correcta."""
     if not text:
         return ''
-    for ch in r'_*[]()~`>#+-=|{}.!\\':
-        text = text.replace(ch, f'\\{ch}')
-    return text
+    # Escapar en un solo paso con regex — evita double-escape
+    return re.sub(r'([_*\[\]()~`>#+=|{}.!\-\\])', r'\\\1', str(text))
 
 
 def formatear_contacto(contacto: dict, info_reportes: dict, mostrar_id: bool = False) -> str:
