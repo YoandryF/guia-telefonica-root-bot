@@ -77,9 +77,10 @@ def formatear_contacto(contacto: dict, info_reportes: dict, mostrar_id: bool = F
 
 def teclado_contacto(contacto: dict, es_admin: bool = False) -> InlineKeyboardMarkup:
     """Teclado inline con acciones para un contacto."""
-    cid8 = contacto['id'][:8]
-    tel  = contacto['telefono'].replace('-','').replace(' ','')
-    num  = tel if tel.startswith('+') else f"53{tel}" if len(tel) == 8 else tel
+    # Usar teléfono como identificador en callbacks — evita ambigüedad con UUID numéricos
+    tel_id = contacto['telefono'].replace('-','').replace(' ','')
+    tel    = tel_id
+    num    = tel if tel.startswith('+') else f"53{tel}" if len(tel) == 8 else tel
 
     botones = [
         [
@@ -87,16 +88,16 @@ def teclado_contacto(contacto: dict, es_admin: bool = False) -> InlineKeyboardMa
             InlineKeyboardButton("💬 WhatsApp",  url=f"https://wa.me/{num}"),
         ],
         [
-            InlineKeyboardButton("⚠️ Reportar", callback_data=f"reportar_{cid8}"),
-            InlineKeyboardButton("👍 Avalar",   callback_data=f"avalar_{cid8}"),
+            InlineKeyboardButton("⚠️ Reportar", callback_data=f"reportar_{tel_id}"),
+            InlineKeyboardButton("👍 Avalar",   callback_data=f"avalar_{tel_id}"),
         ],
     ]
 
     if es_admin:
         botones.append([
-            InlineKeyboardButton("✅ Aprobar",  callback_data=f"aprobar_{cid8}"),
-            InlineKeyboardButton("❌ Rechazar", callback_data=f"rechazar_{cid8}"),
-            InlineKeyboardButton("🗑 Eliminar", callback_data=f"confirmar_del_{cid8}"),
+            InlineKeyboardButton("✅ Aprobar",  callback_data=f"aprobar_{tel_id}"),
+            InlineKeyboardButton("❌ Rechazar", callback_data=f"rechazar_{tel_id}"),
+            InlineKeyboardButton("🗑 Eliminar", callback_data=f"confirmar_del_{tel_id}"),
         ])
 
     return InlineKeyboardMarkup(botones)
@@ -144,9 +145,9 @@ def _formato_lista_compacta(
     botones = []
     for i, c in enumerate(contactos):
         num  = inicio_num + i
-        cid8 = c['id'][:8]
+        tel_id = c['telefono'].replace('-','').replace(' ','')
         botones.append([InlineKeyboardButton(
-            f"🔍 {num}. {c['telefono']}", callback_data=f"ver_{cid8}"
+            f"🔍 {num}. {c['telefono']}", callback_data=f"ver_{tel_id}"
         )])
 
     # Paginación
