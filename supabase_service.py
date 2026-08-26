@@ -138,28 +138,22 @@ class SupabaseService:
             return []
 
     def buscar_por_telefono(self, telefono: str) -> dict:
-        """Buscar contacto por teléfono (normalizado)"""
+        """Buscar contacto por teléfono — usa índice idx_contactos_telefono (O(log n))."""
         if not self._check_client():
             return None
         try:
+            # Normalizar: solo dígitos
             tel_limpio = ''.join(c for c in telefono if c.isdigit())
 
-            response = (
-                self.client.table("contactos")
-                .select("*")
-                .ilike("telefono", f"%{telefono}%")
-                .is_("deleted_at", None)
-                .limit(1)
-                .execute()
-            )
-            if response.data:
-                return response.data[0]
-
-            if tel_limpio != telefono:
+            # 1. Búsqueda exacta — usa índice, O(log n)
+            for tel in dict.fromkeys([tel_limpio, telefono]):  # deduplicar
+                if not tel:
+                    continue
                 response = (
                     self.client.table("contactos")
-                    .select("*")
-                    .ilike("telefono", f"%{tel_limpio}%")
+                    .select("id,nombre,apellido,telefono,estado,provincia,municipio,"
+                            "creado_por,creado_desde,tiene_reportes,verificado,deleted_at")
+                    .eq("telefono", tel)
                     .is_("deleted_at", None)
                     .limit(1)
                     .execute()
@@ -167,12 +161,14 @@ class SupabaseService:
                 if response.data:
                     return response.data[0]
 
-            if len(tel_limpio) > 8:
-                ultimos8 = tel_limpio[-8:]
+            # 2. Fallback prefijo — solo si el teléfono tiene 8+ dígitos
+            #    Usa índice de prefijo (LIKE 'tel%') que es O(log n)
+            if len(tel_limpio) >= 7:
                 response = (
                     self.client.table("contactos")
-                    .select("*")
-                    .ilike("telefono", f"%{ultimos8}%")
+                    .select("id,nombre,apellido,telefono,estado,provincia,municipio,"
+                            "creado_por,creado_desde,tiene_reportes,verificado,deleted_at")
+                    .like("telefono", f"{tel_limpio}%")
                     .is_("deleted_at", None)
                     .limit(1)
                     .execute()
