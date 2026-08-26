@@ -590,3 +590,50 @@ class SupabaseService:
         except Exception as e:
             logger.error(f"Error desactivando admin: {e}")
             return {"error": str(e)}
+
+    # ============================================
+    # CANAL DE EVIDENCIAS
+    # ============================================
+
+    def get_canal_evidencias(self) -> str | None:
+        """Obtener el ID del canal de evidencias configurado. Retorna None si no está configurado."""
+        if not self._check_client():
+            return None
+        try:
+            resp = self.client.table("configuracion").select("valor").eq("clave", "canal_evidencias_id").limit(1).execute()
+            if resp.data:
+                valor = resp.data[0].get("valor", "")
+                return valor if valor else None
+            return None
+        except Exception as e:
+            logger.error(f"Error obteniendo canal evidencias: {e}")
+            return None
+
+    def set_canal_evidencias(self, canal_id: str) -> bool:
+        """Guardar o limpiar el ID del canal de evidencias."""
+        if not self._check_client():
+            return False
+        try:
+            self.client.table("configuracion").update(
+                {"valor": canal_id or ""}
+            ).eq("clave", "canal_evidencias_id").execute()
+            return True
+        except Exception as e:
+            logger.error(f"Error guardando canal evidencias: {e}")
+            return False
+
+    def guardar_evidencia_reporte(self, reporte_id: str, chat_id: str,
+                                   message_id: int, file_id: str) -> bool:
+        """Guardar referencia de evidencia en el reporte."""
+        if not self._check_client():
+            return False
+        try:
+            self.client.table("reportes").update({
+                "evidencia_chat_id": chat_id,
+                "evidencia_msg_id":  message_id,
+                "evidencia_file_id": file_id,
+            }).eq("id", reporte_id).execute()
+            return True
+        except Exception as e:
+            logger.error(f"Error guardando evidencia: {e}")
+            return False

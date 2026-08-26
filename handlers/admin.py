@@ -438,10 +438,34 @@ async def importar_archivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_texto_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Capturar texto libre del admin (motivo de rechazo, config, etc.)
-    Si no hay nada pendiente, delegar a handle_texto_libre para búsqueda normal."""
+    """Capturar texto libre del admin (motivo de rechazo, config, canal, etc.)"""
 
-    # ── Editar configuración (solo owner) ─────────────────────────────────────
+    # ── Vincular canal de evidencias (solo owner) ──────────────────────────────
+    if context.user_data.get('esperando_canal_id'):
+        from utils.helpers import es_owner
+        if not es_owner(update.effective_user.id):
+            context.user_data.pop('esperando_canal_id', None)
+            return
+        context.user_data.pop('esperando_canal_id')
+        canal_input = update.message.text.strip()
+        # Verificar que el bot puede acceder al canal
+        try:
+            chat = await context.bot.get_chat(canal_input)
+            canal_id = str(chat.id)
+            db.set_canal_evidencias(canal_id)
+            from utils.views import mostrar_configurar_canal
+            await update.message.reply_text(
+                f"✅ Canal <b>{chat.title}</b> vinculado correctamente.",
+                parse_mode="HTML",
+            )
+            await mostrar_configurar_canal(update.message, context.bot)
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ No se pudo acceder al canal: {e}\n\n"
+                f"Verifica que el bot sea admin del canal e intenta de nuevo."
+            )
+            context.user_data['esperando_canal_id'] = True
+        return
     if 'cfg_edit_clave' in context.user_data:
         from utils.helpers import es_owner, validar_valor_config
         if not es_owner(update.effective_user.id):

@@ -105,9 +105,12 @@ async def mostrar_start(message: Message, user_id: int,
 
     if _es_owner(user_id):
         keyboard.append([
-            InlineKeyboardButton("👑 Admins",   callback_data="cmd_admins"),
-            InlineKeyboardButton("⚙️ Config",  callback_data="cmd_config"),
-            InlineKeyboardButton("📤 Exportar", callback_data="cmd_exportar"),
+            InlineKeyboardButton("👑 Admins",       callback_data="cmd_admins"),
+            InlineKeyboardButton("⚙️ Config",       callback_data="cmd_config"),
+            InlineKeyboardButton("📤 Exportar",     callback_data="cmd_exportar"),
+        ])
+        keyboard.append([
+            InlineKeyboardButton("📢 Canal evidencias", callback_data="canal_ev_menu"),
         ])
 
     markup = InlineKeyboardMarkup(keyboard)
@@ -589,3 +592,45 @@ async def mostrar_lista_busqueda(message: Message, contactos: list, query_texto:
     botones = list(markup_busqueda.inline_keyboard) + [_btn_inicio()]
     await _enviar(message, texto, InlineKeyboardMarkup(botones),
                   parse_mode="MarkdownV2", editar=editar)
+
+
+
+async def mostrar_configurar_canal(message, bot, editar: bool = False) -> None:
+    """Vista de configuración del canal de evidencias — solo owner."""
+    canal_id = db.get_canal_evidencias()
+
+    if canal_id:
+        try:
+            chat         = await bot.get_chat(canal_id)
+            nombre_canal = chat.title or canal_id
+            estado       = f"✅ Canal vinculado: <b>{nombre_canal}</b>\n<code>{canal_id}</code>"
+        except Exception:
+            estado = f"⚠️ Canal configurado pero no accesible: <code>{canal_id}</code>"
+    else:
+        estado = "❌ No hay canal de evidencias configurado"
+
+    texto = (
+        f"📢 <b>Canal de Evidencias</b>\n\n"
+        f"{estado}\n\n"
+        f"<i>El bot debe ser administrador del canal con permisos de envío.</i>\n\n"
+        f"Para vincular:\n"
+        f"1. Agrega el bot como admin del canal\n"
+        f"2. Toca 'Vincular canal' y escribe el ID o @username del canal"
+    )
+    botones = [
+        [InlineKeyboardButton(
+            "🔗 Vincular canal" if not canal_id else "🔄 Cambiar canal",
+            callback_data="canal_ev_vincular"
+        )],
+    ]
+    if canal_id:
+        botones.append([
+            InlineKeyboardButton("🗑 Desvincular", callback_data="canal_ev_desvincular")
+        ])
+    botones.append([
+        InlineKeyboardButton("🔙 Config", callback_data="cmd_config"),
+        InlineKeyboardButton("🏠 Inicio",  callback_data="cmd_inicio"),
+    ])
+    await _enviar(message, texto, InlineKeyboardMarkup(botones),
+                  parse_mode="HTML", editar=editar)
+

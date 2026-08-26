@@ -752,3 +752,311 @@ def get_registrar_admin_handler():
             cancelar_cb,
         ],
     )
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Flujo de reporte con evidencia
+# ─────────────────────────────────────────────────────────────────────────────
+REP_MOTIVO_FULL, REP_DESCRIPCION_FULL, REP_EVIDENCIA_FULL, REP_CONFIRMAR_FULL = range(30, 34)
+
+MOTIVOS_INLINE = [
+    [
+        InlineKeyboardButton("📞 Número incorrecto", callback_data="repf_mot_numero_incorrecto"),
+        InlineKeyboardButton("❌ No existe",          callback_data="repf_mot_no_existe"),
+    ],
+    [
+        InlineKeyboardButton("📢 Spam",               callback_data="repf_mot_spam"),
+        InlineKeyboardButton("🔄 Duplicado",          callback_data="repf_mot_duplicado"),
+    ],
+    [
+        InlineKeyboardButton("⚠️ Estafa / Fraude",   callback_data="repf_mot_estafa"),
+        InlineKeyboardButton("📋 Otro",               callback_data="repf_mot_otro"),
+    ],
+    [InlineKeyboardButton("🔙 Cancelar", callback_data="repf_cancelar")],
+]
+
+MOTIVOS_LABELS = {
+    "numero_incorrecto": "📞 Número incorrecto",
+    "no_existe":         "❌ No existe",
+    "spam":              "📢 Spam",
+    "duplicado":         "🔄 Duplicado",
+    "estafa":            "⚠️ Estafa / Fraude",
+    "otro":              "📋 Otro",
+}
+
+
+async def reporte_inicio_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Entrada al flujo de reporte desde botón inline reportar_{tel}."""
+    query = update.callback_query
+    await query.answer()
+    tel_id   = query.data[9:]   # quitar "reportar_"
+    contacto = db.buscar_por_id_o_telefono(tel_id)
+    if not contacto:
+        await query.answer("❌ Contacto no encontrado", show_alert=True)
+        return ConversationHandler.END
+
+    context.user_data['rep_contacto_id']  = contacto['id']
+    context.user_data['rep_telefono']     = contacto['telefono']
+    context.user_data['rep_nombre']       = f"{contacto['nombre']} {contacto['apellido']}"
+    context.user_data['rep_msg_id']       = query.message.message_id
+
+    await query.edit_message_text(
+        f"⚠️ *Reportar contacto — Paso 1/3*\n\n"
+        f"👤 {context.user_data['rep_nombre']}\n"
+        f"📱 `{contacto['telefono']}`\n\n"
+        f"Selecciona el *motivo*:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(MOTIVOS_INLINE),
+    )
+    return REP_MOTIVO_FULL
+
+
+async def reporte_motivo_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Captura el motivo seleccionado."""
+    query  = update.callback_query
+    await query.answer()
+    motivo = query.data.replace("repf_mot_", "")
+    context.user_data['rep_motivo'] = motivo
+    label  = MOTIVOS_LABELS.get(motivo, motivo)
+
+    await query.edit_message_text(
+        f"⚠️ *Reportar — Paso 2/3*\n\n"
+        f"✅ Motivo: {label}\n\n"
+        f"¿Quieres agregar una *descripción*?\n"
+        f"_Escribe los detalles o toca Omitir:_",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⏭ Omitir descripción", callback_data="repf_omitir_desc")],
+            [InlineKeyboardButton("🔙 Cancelar",           callback_data="repf_cancelar")],
+        ]),
+    )
+    return REP_DESCRIPCION_FULL
+
+
+async def reporte_descripcion_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Captura descripción escrita por el usuario."""
+    context.user_data['rep_descripcion'] = update.message.text.strip()
+    return await _reporte_paso_evidencia(update.message, context)
+
+
+async def reporte_omitir_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Omite la descripción."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data['rep_descripcion'] = None
+    return await _reporte_paso_evidencia(query.message, context, editar=True)
+
+
+async def _reporte_paso_evidencia(message, context, editar: bool = False):
+    """Muestra paso de evidencia si el canal está configurado, si no va directo a confirmar."""
+    canal = db.get_canal_evidencias()
+
+    if canal:
+        texto  = (
+            f"⚠️ *Reportar — Paso 3/3*\n\n"
+            f"¿Tienes una *captura de pantalla* como evidencia?\n\n"
+            f"_Envía la foto ahora o toca Omitir:_"
+        )
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⏭ Omitir evidencia", callback_data="repf_omitir_ev")],
+            [InlineKeyboardButton("🔙 Cancelar",         callback_data="repf_cancelar")],
+        ])
+        if editar:
+            await message.edit_text(texto, parse_mode="Markdown", reply_markup=markup)
+        else:
+            await message.reply_text(texto, parse_mode="Markdown", reply_markup=markup)
+        return REP_EVIDENCIA_FULL
+    else:
+        # Sin canal configurado — ir directo a confirmación
+        return await _reporte_confirmar(message, context, editar=editar)
+
+
+async def reporte_evidencia_foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe la foto y la reenvía al canal de evidencias."""
+    canal = db.get_canal_evidencias()
+    if not canal:
+        return await _reporte_confirmar(update.message, context)
+
+    foto = update.message.photo[-1]  # mayor resolución
+    try:
+        enviado = await update.message.bot.send_photo(
+            chat_id=canal,
+            photo=foto.file_id,
+            caption=(
+                f"📎 Evidencia de reporte\n"
+                f"👤 {context.user_data.get('rep_nombre','?')}\n"
+                f"📱 {context.user_data.get('rep_telefono','?')}\n"
+                f"⚠️ {MOTIVOS_LABELS.get(context.user_data.get('rep_motivo',''), '?')}"
+            ),
+        )
+        context.user_data['rep_ev_chat_id']  = str(canal)
+        context.user_data['rep_ev_msg_id']   = enviado.message_id
+        context.user_data['rep_ev_file_id']  = foto.file_id
+        await update.message.reply_text("✅ Evidencia recibida.")
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ No se pudo enviar la evidencia al canal: {e}")
+
+    return await _reporte_confirmar(update.message, context)
+
+
+async def reporte_omitir_evidencia(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Omite la evidencia."""
+    query = update.callback_query
+    await query.answer()
+    return await _reporte_confirmar(query.message, context, editar=True)
+
+
+async def _reporte_confirmar(message, context, editar: bool = False):
+    """Muestra resumen y pide confirmación final."""
+    motivo      = context.user_data.get('rep_motivo', 'otro')
+    descripcion = context.user_data.get('rep_descripcion')
+    tiene_ev    = 'rep_ev_file_id' in context.user_data
+    nombre      = context.user_data.get('rep_nombre', '?')
+    telefono    = context.user_data.get('rep_telefono', '?')
+
+    texto = (
+        f"📋 *Confirma el reporte:*\n\n"
+        f"👤 {nombre}\n"
+        f"📱 `{telefono}`\n"
+        f"⚠️ Motivo: {MOTIVOS_LABELS.get(motivo, motivo)}\n"
+    )
+    if descripcion:
+        texto += f"💬 Descripción: _{descripcion}_\n"
+    if tiene_ev:
+        texto += f"📎 Evidencia: adjunta ✅\n"
+
+    markup = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Enviar reporte", callback_data="repf_enviar"),
+            InlineKeyboardButton("❌ Cancelar",        callback_data="repf_cancelar"),
+        ]
+    ])
+    if editar:
+        await message.edit_text(texto, parse_mode="Markdown", reply_markup=markup)
+    else:
+        await message.reply_text(texto, parse_mode="Markdown", reply_markup=markup)
+    return REP_CONFIRMAR_FULL
+
+
+async def reporte_enviar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Guarda el reporte en BD y limpia el estado."""
+    query = update.callback_query
+    await query.answer()
+
+    resultado = db.reportar_contacto(
+        contacto_id   = context.user_data['rep_contacto_id'],
+        motivo        = context.user_data.get('rep_motivo', 'otro'),
+        descripcion   = context.user_data.get('rep_descripcion'),
+        reportado_por = str(query.from_user.id),
+    )
+
+    if resultado.get("error"):
+        await query.edit_message_text(
+            f"❌ Error: {resultado['error']}",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio")
+            ]]),
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    # Guardar evidencia si existe
+    if 'rep_ev_file_id' in context.user_data:
+        reporte_id = resultado.get("data", {}).get("id") if resultado.get("data") else None
+        if reporte_id:
+            db.guardar_evidencia_reporte(
+                reporte_id = reporte_id,
+                chat_id    = context.user_data['rep_ev_chat_id'],
+                message_id = context.user_data['rep_ev_msg_id'],
+                file_id    = context.user_data['rep_ev_file_id'],
+            )
+
+    # Notificar al admin
+    from utils.helpers import ADMIN_CHAT_ID
+    if ADMIN_CHAT_ID:
+        try:
+            await query.bot.send_message(
+                chat_id    = ADMIN_CHAT_ID,
+                text       = (
+                    f"🚨 *Nuevo reporte*\n\n"
+                    f"👤 {context.user_data.get('rep_nombre','?')}\n"
+                    f"📱 `{context.user_data.get('rep_telefono','?')}`\n"
+                    f"⚠️ {MOTIVOS_LABELS.get(context.user_data.get('rep_motivo',''), '?')}\n"
+                    f"{'💬 ' + context.user_data.get('rep_descripcion','') if context.user_data.get('rep_descripcion') else ''}\n"
+                    f"{'📎 Con evidencia' if 'rep_ev_file_id' in context.user_data else ''}\n"
+                    f"Por: @{query.from_user.username or query.from_user.first_name}"
+                ),
+                parse_mode = "Markdown",
+            )
+        except Exception:
+            pass
+
+    tel_id = context.user_data.get('rep_telefono', '')
+    context.user_data.clear()
+
+    await query.edit_message_text(
+        "✅ *Reporte enviado*\n\nGracias por informar. El administrador lo revisará pronto.",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔙 Ver contacto", callback_data=f"ver_{tel_id}"),
+            InlineKeyboardButton("🏠 Inicio",       callback_data="cmd_inicio"),
+        ]]),
+    )
+    return ConversationHandler.END
+
+
+async def reporte_cancelar_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancelar el flujo de reporte — vuelve a la ficha del contacto."""
+    query  = update.callback_query
+    await query.answer()
+    tel_id = context.user_data.get('rep_telefono', '')
+    context.user_data.clear()
+    if tel_id:
+        from utils.views import mostrar_contacto
+        contacto = db.buscar_por_id_o_telefono(tel_id)
+        if contacto:
+            await mostrar_contacto(query.message, contacto, editar=True)
+            return ConversationHandler.END
+    await query.edit_message_text(
+        "❌ Reporte cancelado.",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio")
+        ]]),
+    )
+    return ConversationHandler.END
+
+
+def get_reporte_completo_handler():
+    """ConversationHandler para el flujo completo de reporte con evidencia."""
+    cancelar   = CallbackQueryHandler(reporte_cancelar_cb,    pattern="^repf_cancelar$")
+    omitir_desc = CallbackQueryHandler(reporte_omitir_desc,   pattern="^repf_omitir_desc$")
+    omitir_ev   = CallbackQueryHandler(reporte_omitir_evidencia, pattern="^repf_omitir_ev$")
+    enviar      = CallbackQueryHandler(reporte_enviar,         pattern="^repf_enviar$")
+
+    return ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(reporte_inicio_cb, pattern="^reportar_")
+        ],
+        states={
+            REP_MOTIVO_FULL: [
+                CallbackQueryHandler(reporte_motivo_cb, pattern="^repf_mot_"),
+                cancelar,
+            ],
+            REP_DESCRIPCION_FULL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, reporte_descripcion_texto),
+                omitir_desc,
+                cancelar,
+            ],
+            REP_EVIDENCIA_FULL: [
+                MessageHandler(filters.PHOTO, reporte_evidencia_foto),
+                omitir_ev,
+                cancelar,
+            ],
+            REP_CONFIRMAR_FULL: [
+                enviar,
+                cancelar,
+            ],
+        },
+        fallbacks=[cancelar],
+    )

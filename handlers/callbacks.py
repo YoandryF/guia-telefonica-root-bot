@@ -20,7 +20,7 @@ from utils.views import (
     mostrar_start, mostrar_ayuda, mostrar_estadisticas,
     mostrar_admins, mostrar_eliminar_admin, mostrar_confirmar_eliminar_admin,
     mostrar_mis_reportes, mostrar_lista_busqueda, mostrar_listanegra,
-    mostrar_config, mostrar_editar_config,
+    mostrar_config, mostrar_editar_config, mostrar_configurar_canal,
 )
 
 logger = logging.getLogger(__name__)
@@ -189,6 +189,46 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("🔒 Solo el owner", show_alert=True)
             return
         await mostrar_config(query.message, pagina=0, editar=True)
+        return
+
+    if data == "canal_ev_menu":
+        if not owner:
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        await mostrar_configurar_canal(query.message, query.bot, editar=True)
+        return
+
+    if data == "canal_ev_vincular":
+        if not owner:
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        context.user_data['esperando_canal_id'] = True
+        await query.edit_message_text(
+            "📢 <b>Vincular canal de evidencias</b>\n\n"
+            "Escribe el <b>ID o @username</b> del canal:\n\n"
+            "<i>Ejemplos: -1001234567890  o  @mi_canal_privado</i>\n\n"
+            "⚠️ El bot debe ser admin del canal antes de vincularlo.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("❌ Cancelar", callback_data="canal_ev_cancelar")
+            ]]),
+        )
+        return
+
+    if data == "canal_ev_cancelar":
+        if not owner:
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        context.user_data.pop('esperando_canal_id', None)
+        await mostrar_configurar_canal(query.message, query.bot, editar=True)
+        return
+
+    if data == "canal_ev_desvincular":
+        if not owner:
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        db.set_canal_evidencias("")
+        await mostrar_configurar_canal(query.message, query.bot, editar=True)
         return
 
     if data.startswith("cfg_pg_"):
