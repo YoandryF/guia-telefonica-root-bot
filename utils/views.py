@@ -240,11 +240,11 @@ async def mostrar_pendientes(message: Message, context: ContextTypes.DEFAULT_TYP
         mun    = c.get('municipio') or ''
         ubi    = f" — {mun}, {prov}" if mun else (f" — {prov}" if prov else "")
         texto += f"👤 *{nombre}*\n📱 `{c['telefono']}`{ubi}\n\n"
-        cid8   = c['id'][:8]
+        tel = c['telefono']  # usar teléfono como identificador — siempre único y sin problemas de tipo UUID
         botones.append([
-            InlineKeyboardButton(f"✅ {c['telefono']}", callback_data=f"aprobar_{cid8}"),
-            InlineKeyboardButton("❌",                  callback_data=f"rechazar_{cid8}"),
-            InlineKeyboardButton("🗑",                  callback_data=f"confirmar_del_{cid8}"),
+            InlineKeyboardButton(f"✅ {tel}", callback_data=f"aprobar_{tel}"),
+            InlineKeyboardButton("❌",        callback_data=f"rechazar_{tel}"),
+            InlineKeyboardButton("🗑",        callback_data=f"confirmar_del_{tel}"),
         ])
 
     nav = []
