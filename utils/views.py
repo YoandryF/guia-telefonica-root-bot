@@ -355,7 +355,7 @@ async def mostrar_mis_reportes(message: Message, user_id: str,
     """Reportes enviados por el usuario."""
     try:
         resp = db.client.table("reportes").select(
-            "id, motivo, fecha_reporte, contactos(nombre, apellido, telefono)"
+            "id, motivo, estado, fecha_reporte, contactos(nombre, apellido, telefono)"
         ).eq("reportado_por", user_id).order("fecha_reporte", desc=True).limit(10).execute()
 
         if not resp.data:
@@ -363,14 +363,23 @@ async def mostrar_mis_reportes(message: Message, user_id: str,
             await _enviar(message, "📭 No has enviado reportes aún.", markup, editar=editar)
             return
 
+        ESTADO_EMOJI = {
+            "pendiente": "⏳",
+            "revisado":  "✅",
+            "resuelto":  "❌",
+        }
+
         texto = f"📌 *Tus reportes ({len(resp.data)}):*\n\n"
         for r in resp.data:
-            c     = r.get('contactos') or {}
-            fecha = (r.get('fecha_reporte') or '')[:10]
+            c       = r.get('contactos') or {}
+            fecha   = (r.get('fecha_reporte') or '')[:10]
+            estado  = r.get('estado', 'pendiente')
+            emoji   = ESTADO_EMOJI.get(estado, "⏳")
+            label   = {"pendiente": "Pendiente", "revisado": "Aprobado", "resuelto": "Desestimado"}.get(estado, estado)
             texto += (
-                f"⚠️ *{c.get('nombre','')} {c.get('apellido','')}*"
+                f"{emoji} *{c.get('nombre','')} {c.get('apellido','')}*"
                 f" — `{c.get('telefono','')}`\n"
-                f"   {r['motivo']} — {fecha}\n\n"
+                f"   {r['motivo']} · {label} · {fecha}\n\n"
             )
 
         markup = InlineKeyboardMarkup([_btn_inicio()])
