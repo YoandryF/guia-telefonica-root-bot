@@ -817,6 +817,11 @@ async def reporte_motivo_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query  = update.callback_query
     await query.answer()
     motivo = query.data.replace("repf_mot_", "")
+    # Validar que el motivo sea compatible con el constraint de la BD
+    # Si el constraint no incluye 'estafa' aún, mapearlo a 'otro'
+    motivos_validos = {'numero_incorrecto', 'no_existe', 'spam', 'duplicado', 'estafa', 'otro'}
+    if motivo not in motivos_validos:
+        motivo = 'otro'
     context.user_data['rep_motivo'] = motivo
     label  = MOTIVOS_LABELS.get(motivo, motivo)
 
