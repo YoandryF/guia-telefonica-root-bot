@@ -216,16 +216,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏳ Verificando permisos en el grupo...",
         )
         try:
-            chat = await query.bot.get_chat(chat_id_sel)
+            chat = await context.bot.get_chat(chat_id_sel)
             # Enviar mensaje de prueba para verificar permisos reales
-            msg_prueba = await query.bot.send_message(
+            msg_prueba = await context.bot.send_message(
                 chat_id = chat_id_sel,
                 text    = "🔧 Verificación de permisos — este mensaje se borrará automáticamente.",
             )
-            await query.bot.delete_message(chat_id=chat_id_sel, message_id=msg_prueba.message_id)
+            await context.bot.delete_message(chat_id=chat_id_sel, message_id=msg_prueba.message_id)
             # Permisos OK — guardar
             db.set_canal_evidencias(chat_id_sel)
-            await mostrar_configurar_canal(query.message, query.bot, editar=True)
+            await mostrar_configurar_canal(query.message, context.bot, editar=True)
         except Exception as e:
             error_str = str(e).lower()
             if "not enough rights" in error_str or "forbidden" in error_str:
@@ -266,7 +266,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("🔒 Solo el owner", show_alert=True)
             return
         context.user_data.pop('esperando_canal_id', None)
-        await mostrar_configurar_canal(query.message, query.bot, editar=True)
+        await mostrar_configurar_canal(query.message, context.bot, editar=True)
         return
 
     if data == "canal_ev_desvincular":
@@ -274,7 +274,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("🔒 Solo el owner", show_alert=True)
             return
         db.set_canal_evidencias("")
-        await mostrar_configurar_canal(query.message, query.bot, editar=True)
+        await mostrar_configurar_canal(query.message, context.bot, editar=True)
         return
 
     if data.startswith("cfg_pg_"):
@@ -354,7 +354,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if ADMIN_CHAT_ID:
                 try:
                     nombre = f"{contacto['nombre']} {contacto['apellido']}"
-                    await query.bot.send_message(
+                    await context.bot.send_message(
                         chat_id=ADMIN_CHAT_ID,
                         text=(
                             f"🚨 *Nuevo reporte*\n\n"
@@ -446,7 +446,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             c = resultado.get("data", {})
             if c.get("creado_por") and c.get("creado_desde") == "telegram":
                 try:
-                    await query.bot.send_message(
+                    await context.bot.send_message(
                         chat_id=c["creado_por"],
                         text=f"✅ Tu contacto *{c['nombre']} {c['apellido']}* fue aprobado!",
                         parse_mode="Markdown",
@@ -568,7 +568,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             c      = r.get("contactos") or {}
             nombre = f"{c.get('nombre','?')} {c.get('apellido','')}"
             # Enviar la foto al admin en un mensaje nuevo (no editar — es una foto)
-            await query.bot.send_photo(
+            await context.bot.send_photo(
                 chat_id = query.from_user.id,
                 photo   = file_id,
                 caption = (
