@@ -195,7 +195,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not owner:
             await query.answer("🔒 Solo el owner", show_alert=True)
             return
-        await mostrar_configurar_canal(query.message, query.bot, editar=True)
+        try:
+            await mostrar_configurar_canal(query.message, context.bot, editar=True)
+        except Exception as e:
+            await query.edit_message_text(
+                f"❌ Error al cargar canal de evidencias: {e}",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🏠 Inicio", callback_data="cmd_inicio")
+                ]]),
+            )
         return
 
     if data.startswith("canal_ev_sel_"):
