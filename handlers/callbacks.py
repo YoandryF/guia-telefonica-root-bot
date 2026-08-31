@@ -198,6 +198,44 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_configurar_canal(query.message, query.bot, editar=True)
         return
 
+    if data.startswith("canal_ev_sel_"):
+        if not owner:
+            await query.answer("🔒 Solo el owner", show_alert=True)
+            return
+        # Selección directa de un grupo conocido — validar permisos y guardar
+        chat_id_sel = data[13:]  # quitar "canal_ev_sel_"
+        await query.edit_message_text(
+            f"⏳ Verificando permisos en el grupo...",
+        )
+        try:
+            chat = await query.bot.get_chat(chat_id_sel)
+            # Enviar mensaje de prueba para verificar permisos reales
+            msg_prueba = await query.bot.send_message(
+                chat_id = chat_id_sel,
+                text    = "🔧 Verificación de permisos — este mensaje se borrará automáticamente.",
+            )
+            await query.bot.delete_message(chat_id=chat_id_sel, message_id=msg_prueba.message_id)
+            # Permisos OK — guardar
+            db.set_canal_evidencias(chat_id_sel)
+            await mostrar_configurar_canal(query.message, query.bot, editar=True)
+        except Exception as e:
+            error_str = str(e).lower()
+            if "not enough rights" in error_str or "forbidden" in error_str:
+                motivo = "El bot no tiene permisos para enviar mensajes."
+            elif "not a member" in error_str or "kicked" in error_str:
+                motivo = "El bot ya no es miembro de ese grupo."
+            else:
+                motivo = str(e)
+            await query.edit_message_text(
+                f"❌ <b>No se pudo vincular</b>\n\n⚠️ {motivo}\n\n"
+                f"Verifica los permisos del bot en el grupo e intenta de nuevo.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Volver", callback_data="canal_ev_menu")
+                ]]),
+            )
+        return
+
     if data == "canal_ev_vincular":
         if not owner:
             await query.answer("🔒 Solo el owner", show_alert=True)

@@ -598,7 +598,7 @@ class SupabaseService:
     # ============================================
 
     def get_canal_evidencias(self) -> str | None:
-        """Obtener el ID del canal de evidencias configurado. Retorna None si no está configurado."""
+        """Obtener el ID del canal de evidencias configurado."""
         if not self._check_client():
             return None
         try:
@@ -622,6 +622,48 @@ class SupabaseService:
             return True
         except Exception as e:
             logger.error(f"Error guardando canal evidencias: {e}")
+            return False
+
+    def get_grupos_conocidos(self) -> list[dict]:
+        """Obtener lista de grupos/canales donde el bot ha estado activo.
+        Retorna lista de dicts con 'id', 'title', 'type'.
+        """
+        if not self._check_client():
+            return []
+        try:
+            resp = self.client.table("configuracion").select("valor").eq("clave", "grupos_conocidos").limit(1).execute()
+            if resp.data and resp.data[0].get("valor"):
+                import json
+                return json.loads(resp.data[0]["valor"])
+            return []
+        except Exception as e:
+            logger.error(f"Error obteniendo grupos conocidos: {e}")
+            return []
+
+    def agregar_grupo_conocido(self, chat_id: str, title: str, chat_type: str) -> bool:
+        """Registrar un grupo/canal donde el bot está activo.
+        Actualiza el título si ya existe. Ignora chats privados.
+        """
+        if not self._check_client():
+            return False
+        if chat_type == "private":
+            return False
+        try:
+            import json
+            grupos = self.get_grupos_conocidos()
+            # Actualizar si ya existe, agregar si no
+            existente = next((g for g in grupos if g["id"] == chat_id), None)
+            if existente:
+                existente["title"] = title
+                existente["type"]  = chat_type
+            else:
+                grupos.append({"id": chat_id, "title": title, "type": chat_type})
+            self.client.table("configuracion").update(
+                {"valor": json.dumps(grupos, ensure_ascii=False)}
+            ).eq("clave", "grupos_conocidos").execute()
+            return True
+        except Exception as e:
+            logger.error(f"Error agregando grupo conocido: {e}")
             return False
 
     def guardar_evidencia_reporte(self, reporte_id: str, chat_id: str,

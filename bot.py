@@ -11,6 +11,7 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
+    ChatMemberHandler,
     filters,
 )
 from dotenv import load_dotenv
@@ -100,7 +101,44 @@ def create_app():
     app.add_handler(CommandHandler("config",            config))
     app.add_handler(CommandHandler("setconfig",         setconfig))
 
+    # ── Handler para registrar grupos conocidos ───────────────────────────────
+    app.add_handler(ChatMemberHandler(_registrar_grupo, ChatMemberHandler.MY_CHAT_MEMBER))
+    # También registrar cuando el bot recibe cualquier mensaje en un grupo
+    app.add_handler(MessageHandler(
+        filters.ChatType.GROUPS & ~filters.COMMAND,
+        _registrar_grupo_mensaje,
+    ), group=99)  # group=99 → no interfiere con otros handlers
+
     return app
+
+
+async def _registrar_grupo(update: Update, context) -> None:
+    """Registrar grupo cuando el bot es añadido o actualizado como miembro."""
+    from utils.helpers import db
+    resultado = update.my_chat_member
+    if not resultado:
+        return
+    chat   = resultado.chat
+    nuevo  = resultado.new_chat_member
+    # Solo registrar si el bot fue añadido (no eliminado)
+    if nuevo and nuevo.status in ("member", "administrator"):
+        db.agregar_grupo_conocido(
+            chat_id   = str(chat.id),
+            title     = chat.title or str(chat.id),
+            chat_type = chat.type,
+        )
+
+
+async def _registrar_grupo_mensaje(update: Update, context) -> None:
+    """Registrar grupo al recibir cualquier mensaje — captura grupos donde ya estaba."""
+    from utils.helpers import db
+    chat = update.effective_chat
+    if chat and chat.type in ("group", "supergroup", "channel"):
+        db.agregar_grupo_conocido(
+            chat_id   = str(chat.id),
+            title     = chat.title or str(chat.id),
+            chat_type = chat.type,
+        )
 
 
 async def _set_commands(app):

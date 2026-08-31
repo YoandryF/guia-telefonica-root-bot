@@ -610,9 +610,13 @@ async def mostrar_lista_busqueda(message: Message, contactos: list, query_texto:
 
 
 async def mostrar_configurar_canal(message, bot, editar: bool = False) -> None:
-    """Vista de configuración del canal de evidencias — solo owner."""
+    """Vista de configuración del canal de evidencias — solo owner.
+    Muestra grupos conocidos como botones para selección directa.
+    """
     canal_id = db.get_canal_evidencias()
+    grupos   = db.get_grupos_conocidos()
 
+    # Estado actual
     if canal_id:
         try:
             chat         = await bot.get_chat(canal_id)
@@ -626,17 +630,31 @@ async def mostrar_configurar_canal(message, bot, editar: bool = False) -> None:
     texto = (
         f"📢 <b>Canal de Evidencias</b>\n\n"
         f"{estado}\n\n"
-        f"<i>El bot debe ser administrador del canal con permisos de envío.</i>\n\n"
-        f"Para vincular:\n"
-        f"1. Agrega el bot como admin del canal\n"
-        f"2. Toca 'Vincular canal' y escribe el ID o @username del canal"
+        f"<i>El bot debe ser administrador del grupo/canal con permisos de envío.</i>"
     )
-    botones = [
-        [InlineKeyboardButton(
-            "🔗 Vincular canal" if not canal_id else "🔄 Cambiar canal",
-            callback_data="canal_ev_vincular"
-        )],
-    ]
+
+    botones = []
+
+    # Grupos conocidos como botones de selección rápida
+    if grupos:
+        texto += f"\n\n<b>Grupos disponibles ({len(grupos)}):</b>"
+        tipo_emoji = {"group": "👥", "supergroup": "👥", "channel": "📢"}
+        for g in grupos:
+            emoji  = tipo_emoji.get(g.get("type", ""), "💬")
+            label  = f"{emoji} {g['title']}"
+            # Marcar el canal actualmente seleccionado
+            if canal_id and g["id"] == canal_id:
+                label = "✅ " + label
+            botones.append([InlineKeyboardButton(
+                label, callback_data=f"canal_ev_sel_{g['id']}"
+            )])
+    else:
+        texto += "\n\n<i>Aún no hay grupos registrados. Agrega el bot a un grupo y envía cualquier mensaje para que aparezca aquí.</i>"
+
+    # Botones de acción
+    botones.append([
+        InlineKeyboardButton("✍️ Escribir ID manual", callback_data="canal_ev_vincular"),
+    ])
     if canal_id:
         botones.append([
             InlineKeyboardButton("🗑 Desvincular", callback_data="canal_ev_desvincular")
@@ -645,6 +663,7 @@ async def mostrar_configurar_canal(message, bot, editar: bool = False) -> None:
         InlineKeyboardButton("🔙 Config", callback_data="cmd_config"),
         InlineKeyboardButton("🏠 Inicio",  callback_data="cmd_inicio"),
     ])
+
     await _enviar(message, texto, InlineKeyboardMarkup(botones),
                   parse_mode="HTML", editar=editar)
 
