@@ -448,23 +448,59 @@ async def handle_texto_admin(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
         context.user_data.pop('esperando_canal_id')
         canal_input = update.message.text.strip()
-        # Verificar que el bot puede acceder al canal
+
+        # Paso 1: verificar que el bot conoce el chat
         try:
             chat = await context.bot.get_chat(canal_input)
             canal_id = str(chat.id)
-            db.set_canal_evidencias(canal_id)
-            from utils.views import mostrar_configurar_canal
-            await update.message.reply_text(
-                f"✅ Canal <b>{chat.title}</b> vinculado correctamente.",
-                parse_mode="HTML",
-            )
-            await mostrar_configurar_canal(update.message, context.bot)
         except Exception as e:
             await update.message.reply_text(
-                f"❌ No se pudo acceder al canal: {e}\n\n"
-                f"Verifica que el bot sea admin del canal e intenta de nuevo."
+                f"❌ No se encontró el grupo/canal: <code>{canal_input}</code>\n\n"
+                f"Verifica el ID o @username e intenta de nuevo.",
+                parse_mode="HTML",
             )
             context.user_data['esperando_canal_id'] = True
+            return
+
+        # Paso 2: verificar permisos enviando un mensaje de prueba y borrándolo
+        try:
+            msg_prueba = await context.bot.send_message(
+                chat_id = canal_id,
+                text    = "🔧 Verificación de permisos — este mensaje se borrará automáticamente.",
+            )
+            await context.bot.delete_message(chat_id=canal_id, message_id=msg_prueba.message_id)
+        except Exception as e:
+            error_str = str(e).lower()
+            if "not enough rights" in error_str or "forbidden" in error_str:
+                motivo = "El bot no tiene permisos para enviar mensajes."
+            elif "not a member" in error_str or "kicked" in error_str:
+                motivo = "El bot no es miembro del grupo/canal."
+            elif "chat not found" in error_str:
+                motivo = "Chat no encontrado."
+            else:
+                motivo = str(e)
+            await update.message.reply_text(
+                f"❌ <b>No se pudo vincular</b>\n\n"
+                f"📋 Grupo: <b>{chat.title}</b>\n"
+                f"⚠️ Motivo: {motivo}\n\n"
+                f"<b>Para vincular correctamente:</b>\n"
+                f"1. Agrega el bot al grupo/canal\n"
+                f"2. Dale permiso de <b>Enviar mensajes</b> (y <b>Enviar fotos</b>)\n"
+                f"3. Intenta de nuevo",
+                parse_mode="HTML",
+            )
+            context.user_data['esperando_canal_id'] = True
+            return
+
+        # Paso 3: guardar y confirmar
+        db.set_canal_evidencias(canal_id)
+        from utils.views import mostrar_configurar_canal
+        await update.message.reply_text(
+            f"✅ <b>{chat.title}</b> vinculado correctamente.\n\n"
+            f"El bot tiene permisos de envío confirmados.",
+            parse_mode="HTML",
+        )
+        await mostrar_configurar_canal(update.message, context.bot)
         return
     if 'cfg_edit_clave' in context.user_data:
         from utils.helpers import es_owner, validar_valor_config
