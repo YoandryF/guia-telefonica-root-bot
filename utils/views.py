@@ -280,17 +280,22 @@ async def mostrar_reportes(message: Message, editar: bool = False) -> None:
         contacto = r.get("contactos") or {}
         nombre   = f"{contacto.get('nombre','?')} {contacto.get('apellido','')}"
         desc     = r.get('descripcion') or ''
+        tiene_ev = bool(r.get('evidencia_file_id') or r.get('evidencia_msg_id'))
         texto += (
             f"👤 *{nombre}* — `{contacto.get('telefono','')}`\n"
             f"⚠️ {r['motivo']}"
             + (f": _{desc[:50]}_" if desc else "")
+            + (" 📎" if tiene_ev else "")
             + "\n\n"
         )
         cid8 = r['id'][:8]
-        botones.append([
+        fila = [
             InlineKeyboardButton("✅ Verificar",  callback_data=f"verificar_rep_{cid8}"),
             InlineKeyboardButton("🗑 Desestimar", callback_data=f"desestimar_rep_{cid8}"),
-        ])
+        ]
+        if tiene_ev:
+            fila.append(InlineKeyboardButton("📎 Ver evidencia", callback_data=f"ver_ev_{cid8}"))
+        botones.append(fila)
 
     botones.append(_btn_inicio())
     await _enviar(message, texto, InlineKeyboardMarkup(botones), editar=editar)

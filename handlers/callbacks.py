@@ -500,3 +500,40 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await query.edit_message_text(f"❌ Error: {e}")
         return
+
+    if data.startswith("ver_ev_"):
+        if not admin:
+            await query.answer("🔒 Solo admins", show_alert=True)
+            return
+        rid8 = data[7:]
+        try:
+            resp = db.client.table("reportes").select(
+                "evidencia_file_id, evidencia_msg_id, evidencia_chat_id, "
+                "motivo, descripcion, contactos(nombre, apellido, telefono)"
+            ).ilike("id", f"{rid8}%").limit(1).execute()
+            if not resp.data:
+                await query.answer("❌ Reporte no encontrado", show_alert=True)
+                return
+            r = resp.data[0]
+            file_id = r.get("evidencia_file_id")
+            if not file_id:
+                await query.answer("📎 Este reporte no tiene evidencia adjunta", show_alert=True)
+                return
+            c      = r.get("contactos") or {}
+            nombre = f"{c.get('nombre','?')} {c.get('apellido','')}"
+            # Enviar la foto al admin en un mensaje nuevo (no editar — es una foto)
+            await query.bot.send_photo(
+                chat_id = query.from_user.id,
+                photo   = file_id,
+                caption = (
+                    f"📎 *Evidencia del reporte*\n\n"
+                    f"👤 {nombre} — `{c.get('telefono','')}`\n"
+                    f"⚠️ {r.get('motivo','')}\n"
+                    + (f"💬 {r.get('descripcion','')}" if r.get('descripcion') else "")
+                ),
+                parse_mode="Markdown",
+            )
+            await query.answer("📎 Evidencia enviada a tu chat", show_alert=False)
+        except Exception as e:
+            await query.answer(f"❌ Error: {e}", show_alert=True)
+        return

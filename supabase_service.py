@@ -371,18 +371,18 @@ class SupabaseService:
 
     def reportar_contacto(self, contacto_id: str, motivo: str, descripcion: str = None,
                           reportado_por: str = None) -> dict:
-        """Reportar un contacto"""
+        """Reportar un contacto — retorna el registro completo incluyendo el ID generado."""
         if not self._check_client():
             return {"error": "BD no disponible"}
         try:
-            self.client.table("reportes").insert({
-                "contacto_id": contacto_id,
-                "motivo": motivo,
-                "descripcion": descripcion,
-                "reportado_por": reportado_por,
-                "reportado_desde": "telegram",
-            }).execute()
-            return {"data": "ok"}
+            response = self.client.table("reportes").insert({
+                "contacto_id":      contacto_id,
+                "motivo":           motivo,
+                "descripcion":      descripcion,
+                "reportado_por":    reportado_por,
+                "reportado_desde":  "telegram",
+            }).select("id, contacto_id, motivo, estado").execute()
+            return {"data": response.data[0] if response.data else {}}
         except Exception as e:
             return {"error": str(e)}
 
@@ -479,13 +479,15 @@ class SupabaseService:
             return {"aprobados": 0, "pendientes": 0, "mostrar": False, "verificado": False}
 
     def get_reportes_pendientes(self) -> list:
-        """Obtener reportes pendientes con datos del contacto"""
+        """Obtener reportes pendientes con datos del contacto y referencia de evidencia."""
         if not self._check_client():
             return []
         try:
             response = (
                 self.client.table("reportes")
-                .select("*, contactos(nombre, apellido, telefono)")
+                .select("id, motivo, descripcion, estado, fecha_reporte, "
+                        "evidencia_file_id, evidencia_msg_id, evidencia_chat_id, "
+                        "contactos(nombre, apellido, telefono)")
                 .eq("estado", "pendiente")
                 .order("fecha_reporte")
                 .execute()

@@ -1,10 +1,12 @@
 """
 Flujos interactivos (ConversationHandler) para /agregar y /reportar.
 """
+import logging
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 from supabase_service import SupabaseService
 
+logger = logging.getLogger(__name__)
 db = SupabaseService()
 
 # Provincias de Cuba ordenadas
@@ -865,7 +867,8 @@ async def _reporte_paso_evidencia(message, context, editar: bool = False):
         )
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("⏭ Omitir evidencia", callback_data="repf_omitir_ev")],
-            [InlineKeyboardButton("🔙 Cancelar",         callback_data="repf_cancelar")],
+            [InlineKeyboardButton("🔙 Volver",           callback_data="repf_volver_desc"),
+             InlineKeyboardButton("❌ Cancelar",          callback_data="repf_cancelar")],
         ])
         if editar:
             await message.edit_text(texto, parse_mode="Markdown", reply_markup=markup)
@@ -878,30 +881,28 @@ async def _reporte_paso_evidencia(message, context, editar: bool = False):
 
 
 async def reporte_evidencia_foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recibe la foto y la reenvía al canal de evidencias."""
-    canal = db.get_canal_evidencias()
-    if not canal:
-        return await _reporte_confirmar(update.message, context)
+    """Recibe la foto — guarda el file_id en user_data SIN enviar al canal todavía.
+    La foto solo se envía al canal cuando el usuario confirma el reporte en el paso 4.
+    Si cancela, la foto nunca llega al canal.
+    """
+    foto = update.message.photo[-1]  # mayor resolución disponible
+    context.user_data['rep_ev_file_id'] = foto.file_id
 
-    foto = update.message.photo[-1]  # mayor resolución
+    # Borrar el mensaje con la foto por privacidad (si es posible)
     try:
-        enviado = await update.message.bot.send_photo(
-            chat_id=canal,
-            photo=foto.file_id,
-            caption=(
-                f"📎 Evidencia de reporte\n"
-                f"👤 {context.user_data.get('rep_nombre','?')}\n"
-                f"📱 {context.user_data.get('rep_telefono','?')}\n"
-                f"⚠️ {MOTIVOS_LABELS.get(context.user_data.get('rep_motivo',''), '?')}"
-            ),
-        )
-        context.user_data['rep_ev_chat_id']  = str(canal)
-        context.user_data['rep_ev_msg_id']   = enviado.message_id
-        context.user_data['rep_ev_file_id']  = foto.file_id
-        await update.message.reply_text("✅ Evidencia recibida.")
-    except Exception as e:
-        await update.message.reply_text(f"⚠️ No se pudo enviar la evidencia al canal: {e}")
+        await update.message.delete()
+    except Exception:
+        pass
 
+    # Editar el mensaje anterior (el del paso 3) con confirmación
+    # Como no tenemos referencia directa, mandamos un nuevo mensaje pero compacto
+    await update.message.reply_text(
+        "📎 *Evidencia guardada* ✅\n\n_Se adjuntará al reporte al confirmar._",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Cancelar", callback_data="repf_cancelar")],
+        ]),
+    )
     return await _reporte_confirmar(update.message, context)
 
 
@@ -909,7 +910,29 @@ async def reporte_omitir_evidencia(update: Update, context: ContextTypes.DEFAULT
     """Omite la evidencia."""
     query = update.callback_query
     await query.answer()
+    context.user_data.pop('rep_ev_file_id', None)
     return await _reporte_confirmar(query.message, context, editar=True)
+
+
+async def reporte_volver_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Volver al paso de descripción desde el paso de evidencia."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop('rep_ev_file_id', None)
+    motivo = context.user_data.get('rep_motivo', 'otro')
+    label  = MOTIVOS_LABELS.get(motivo, motivo)
+    await query.edit_message_text(
+        f"⚠️ *Reportar — Paso 2/3*\n\n"
+        f"✅ Motivo: {label}\n\n"
+        f"¿Quieres agregar una *descripción*?\n"
+        f"_Escribe los detalles o toca Omitir:_",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⏭ Omitir descripción", callback_data="repf_omitir_desc")],
+            [InlineKeyboardButton("🔙 Cancelar",           callback_data="repf_cancelar")],
+        ]),
+    )
+    return REP_DESCRIPCION_FULL
 
 
 async def _reporte_confirmar(message, context, editar: bool = False):
@@ -966,16 +989,32 @@ async def reporte_enviar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         return ConversationHandler.END
 
-    # Guardar evidencia si existe
-    if 'rep_ev_file_id' in context.user_data:
-        reporte_id = resultado.get("data", {}).get("id") if resultado.get("data") else None
-        if reporte_id:
-            db.guardar_evidencia_reporte(
-                reporte_id = reporte_id,
-                chat_id    = context.user_data['rep_ev_chat_id'],
-                message_id = context.user_data['rep_ev_msg_id'],
-                file_id    = context.user_data['rep_ev_file_id'],
-            )
+    reporte_id = resultado.get("data", {}).get("id") if resultado.get("data") else None
+
+    # Enviar evidencia al canal AHORA (solo al confirmar) y guardar en BD
+    if 'rep_ev_file_id' in context.user_data and reporte_id:
+        canal = db.get_canal_evidencias()
+        if canal:
+            try:
+                enviado = await query.bot.send_photo(
+                    chat_id = canal,
+                    photo   = context.user_data['rep_ev_file_id'],
+                    caption = (
+                        f"📎 Evidencia de reporte\n"
+                        f"🆔 Reporte: {reporte_id[:8]}\n"
+                        f"👤 {context.user_data.get('rep_nombre','?')}\n"
+                        f"📱 {context.user_data.get('rep_telefono','?')}\n"
+                        f"⚠️ {MOTIVOS_LABELS.get(context.user_data.get('rep_motivo',''), '?')}"
+                    ),
+                )
+                db.guardar_evidencia_reporte(
+                    reporte_id = reporte_id,
+                    chat_id    = str(canal),
+                    message_id = enviado.message_id,
+                    file_id    = context.user_data['rep_ev_file_id'],
+                )
+            except Exception as e:
+                logger.warning(f"No se pudo enviar evidencia al canal: {e}")
 
     # Notificar al admin
     from utils.helpers import ADMIN_CHAT_ID
@@ -1034,10 +1073,11 @@ async def reporte_cancelar_cb(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 def get_reporte_completo_handler():
     """ConversationHandler para el flujo completo de reporte con evidencia."""
-    cancelar   = CallbackQueryHandler(reporte_cancelar_cb,    pattern="^repf_cancelar$")
+    cancelar    = CallbackQueryHandler(reporte_cancelar_cb,    pattern="^repf_cancelar$")
     omitir_desc = CallbackQueryHandler(reporte_omitir_desc,   pattern="^repf_omitir_desc$")
     omitir_ev   = CallbackQueryHandler(reporte_omitir_evidencia, pattern="^repf_omitir_ev$")
     enviar      = CallbackQueryHandler(reporte_enviar,         pattern="^repf_enviar$")
+    volver_desc = CallbackQueryHandler(reporte_volver_desc,    pattern="^repf_volver_desc$")
 
     return ConversationHandler(
         entry_points=[
@@ -1056,6 +1096,7 @@ def get_reporte_completo_handler():
             REP_EVIDENCIA_FULL: [
                 MessageHandler(filters.PHOTO, reporte_evidencia_foto),
                 omitir_ev,
+                volver_desc,
                 cancelar,
             ],
             REP_CONFIRMAR_FULL: [
