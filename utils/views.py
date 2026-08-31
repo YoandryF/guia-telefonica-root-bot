@@ -415,7 +415,9 @@ async def mostrar_config(message: Message, pagina: int = 0,
         resp = db.client.table("configuracion").select(
             "clave, valor, descripcion"
         ).order("clave").execute()
-        configs = resp.data or []
+        # Excluir claves que se gestionan por flujos dedicados
+        CLAVES_RESERVADAS = {"canal_evidencias_id", "grupos_conocidos"}
+        configs = [c for c in (resp.data or []) if c["clave"] not in CLAVES_RESERVADAS]
     except Exception as e:
         markup = InlineKeyboardMarkup([_btn_inicio()])
         await _enviar(message, f"❌ Error cargando configs: {e}", markup, editar=editar)
